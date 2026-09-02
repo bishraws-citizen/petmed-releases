@@ -433,6 +433,10 @@ table.data td.wrap { white-space: normal; min-width: 180px; }
 }
 .modal {
   width: min(660px, 100%);
+  /* A results table needs room; without it the price column scrolls out of view. */
+}
+.modal.wide {
+  width: min(1120px, 100%);
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -585,3 +589,38 @@ table.data td.wrap { white-space: normal; min-width: 180px; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* ---------- Flight search ---------- */
+
+.search-summary {
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.search-running { display: flex; flex-direction: column; gap: 8px; }
+
+.attention-list.bordered {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* The stop-and-hand-over panel: serious, but not an error the user caused. */
+.intervention {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--status-serious) 45%, transparent);
+  background: color-mix(in srgb, var(--status-serious) 10%, transparent);
+}
+.intervention-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.intervention-head h3 { font-size: 15px; }
+.intervention-detail { font-weight: 550; }
+.intervention-guidance { margin-top: 6px; color: var(--text-secondary); }
+.intervention-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+.pax-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+.offer-table td.baggage { white-space: normal; min-width: 150px; max-width: 210px; }
+.offer-table td.fare { white-space: nowrap; }

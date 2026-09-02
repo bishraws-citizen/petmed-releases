@@ -3,6 +3,8 @@ export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'failed';
 export type PaymentMethod = 'card' | 'bank_transfer' | 'cash' | 'other';
 export type ProductType = 'flight' | 'hotel' | 'package' | 'tour' | 'transfer' | 'insurance';
+export type CabinClass = 'economy' | 'premium_economy' | 'business' | 'first';
+export type SearchStatus = 'queued' | 'running' | 'completed' | 'failed' | 'intervention_required';
 
 export interface Client {
   id: number;
@@ -21,10 +23,15 @@ export interface TravelRequest {
   id: number;
   reference: string;
   client_id: number;
+  origin: string;
   destination: string;
   depart_date: string;
   return_date: string;
   travelers: number;
+  adults: number;
+  children: number;
+  infants: number;
+  cabin_class: CabinClass;
   budget_cents: number;
   status: RequestStatus;
   notes: string;
@@ -134,4 +141,64 @@ export interface Overview {
     client_name: string;
     balance_cents: number;
   }>;
+}
+
+/** One row scraped from an airline results page, in the dashboard's own shape. */
+export interface FlightOffer {
+  id: number;
+  search_id: number;
+  direction: 'outbound' | 'inbound';
+  position: number;
+  airline: string;
+  airline_code: string;
+  flight_number: string;
+  origin: string;
+  destination: string;
+  depart_time: string;
+  arrive_time: string;
+  duration_minutes: number | null;
+  stops: number | null;
+  baggage: string;
+  fare_brand: string;
+  price_cents: number | null;
+  currency: string;
+  price_basis: 'displayed' | 'base' | 'total';
+  raw_price: string;
+}
+
+export interface FlightSearch {
+  id: number;
+  reference: string;
+  request_id: number;
+  adapter: string;
+  status: SearchStatus;
+  origin: string;
+  destination: string;
+  depart_date: string;
+  return_date: string | null;
+  adults: number;
+  children: number;
+  infants: number;
+  cabin_class: CabinClass;
+  searched_url: string;
+  offer_count: number;
+  currency: string | null;
+  reason_code: string | null;
+  reason_message: string | null;
+  guidance: string;
+  has_evidence: boolean;
+  duration_ms: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  request_reference: string;
+  client_name: string;
+  offers: FlightOffer[];
+}
+
+export interface AdapterInfo {
+  id: string;
+  label: string;
+  airline: string;
+  verified: boolean;
 }

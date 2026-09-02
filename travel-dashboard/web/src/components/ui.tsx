@@ -78,9 +78,11 @@ interface ModalProps {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** Widens the dialog for panels that carry a table. */
+  wide?: boolean;
 }
 
-export function Modal({ title, onClose, children, footer }: ModalProps) {
+export function Modal({ title, onClose, children, footer, wide }: ModalProps) {
   const panel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -107,7 +109,13 @@ export function Modal({ title, onClose, children, footer }: ModalProps) {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} ref={panel}>
+      <div
+        className={`modal${wide ? ' wide' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        ref={panel}
+      >
         <div className="modal-head">
           <h2>{title}</h2>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">

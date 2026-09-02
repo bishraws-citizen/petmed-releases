@@ -5,6 +5,7 @@ import { assertRange, badRequest, field, intParam, notFound } from '../validate.
 export const requests = Router();
 
 export const REQUEST_STATUSES = ['new', 'quoted', 'confirmed', 'lost'];
+export const CABIN_CLASSES = ['economy', 'premium_economy', 'business', 'first'];
 
 const SELECT = `
   SELECT r.*, c.name AS client_name, c.email AS client_email, c.company AS client_company,
@@ -46,17 +47,34 @@ requests.get('/:id', (req, res) => {
 function readBody(body) {
   const data = {
     client_id: field(body, 'client_id', { type: 'int', min: 1 }),
+    origin: field(body, 'origin', { type: 'string', required: false, fallback: '', max: 120 }),
     destination: field(body, 'destination', { type: 'string', max: 120 }),
     depart_date: field(body, 'depart_date', { type: 'date' }),
     return_date: field(body, 'return_date', { type: 'date' }),
-    travelers: field(body, 'travelers', { type: 'int', min: 1, max: 99 }),
+    adults: field(body, 'adults', { type: 'int', min: 1, max: 9, required: false, fallback: 1 }),
+    children: field(body, 'children', { type: 'int', min: 0, max: 9, required: false, fallback: 0 }),
+    infants: field(body, 'infants', { type: 'int', min: 0, max: 9, required: false, fallback: 0 }),
+    cabin_class: field(body, 'cabin_class', {
+      type: 'enum', values: CABIN_CLASSES, required: false, fallback: 'economy',
+    }),
     budget_cents: field(body, 'budget_cents', { type: 'money', required: false, fallback: 0 }),
     status: field(body, 'status', {
       type: 'enum', values: REQUEST_STATUSES, required: false, fallback: 'new',
     }),
     notes: field(body, 'notes', { type: 'string', required: false, fallback: '', max: 2000 }),
   };
+
   assertRange('depart_date', data.depart_date, 'return_date', data.return_date);
+
+  // Airlines seat lap infants with an adult, so they can never outnumber them.
+  if (data.infants > data.adults) {
+    throw badRequest('There must be at least one adult per infant');
+  }
+
+  // The headline traveller count is always the sum of the party, never set by hand.
+  data.travelers = data.adults + data.children + data.infants;
+  if (data.travelers > 20) throw badRequest('A single request cannot exceed 20 travellers');
+
   if (!one('SELECT id FROM clients WHERE id = :client_id', { client_id: data.client_id })) {
     throw badRequest('client_id does not match a known client');
   }
@@ -67,10 +85,12 @@ requests.post('/', (req, res) => {
   const data = readBody(req.body);
   const reference = nextReference('REQ', 'requests');
   const { lastInsertRowid } = run(
-    `INSERT INTO requests (reference, client_id, destination, depart_date, return_date,
-                           travelers, budget_cents, status, notes)
-     VALUES (:reference, :client_id, :destination, :depart_date, :return_date,
-             :travelers, :budget_cents, :status, :notes)`,
+    `INSERT INTO requests (reference, client_id, origin, destination, depart_date, return_date,
+                           travelers, adults, children, infants, cabin_class,
+                           budget_cents, status, notes)
+     VALUES (:reference, :client_id, :origin, :destination, :depart_date, :return_date,
+             :travelers, :adults, :children, :infants, :cabin_class,
+             :budget_cents, :status, :notes)`,
     { ...data, reference },
   );
   res.status(201).json(one(`${SELECT} WHERE r.id = :id`, { id: Number(lastInsertRowid) }));
@@ -82,10 +102,11 @@ requests.patch('/:id', (req, res) => {
   if (!existing) throw notFound('Request');
   const data = readBody({ ...existing, ...req.body });
   run(
-    `UPDATE requests SET client_id = :client_id, destination = :destination,
+    `UPDATE requests SET client_id = :client_id, origin = :origin, destination = :destination,
             depart_date = :depart_date, return_date = :return_date, travelers = :travelers,
-            budget_cents = :budget_cents, status = :status, notes = :notes,
-            updated_at = datetime('now')
+            adults = :adults, children = :children, infants = :infants,
+            cabin_class = :cabin_class, budget_cents = :budget_cents, status = :status,
+            notes = :notes, updated_at = datetime('now')
      WHERE id = :id`,
     { ...data, id },
   );

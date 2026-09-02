@@ -87,3 +87,63 @@ export function dollarsToCents(input: string): number {
 export const centsToDollars = (cents: number) => (cents / 100).toFixed(2);
 
 export const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * Airline fares come back in whatever currency the site quoted, so they are
+ * formatted per offer rather than through the agency's own USD formatter.
+ */
+export function formatFare(cents: number | null, currency: string): string {
+  if (cents === null) return '—';
+  const code = /^[A-Z]{3}$/.test(currency) ? currency : undefined;
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: code ? 'currency' : 'decimal',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency}`.trim();
+  }
+}
+
+/** 185 -> "3h 05m". */
+export function formatDuration(minutes: number | null): string {
+  if (minutes === null || !Number.isFinite(minutes)) return '—';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours ? `${hours}h ${String(rest).padStart(2, '0')}m` : `${rest}m`;
+}
+
+export const formatStops = (stops: number | null) =>
+  stops === null ? '—' : stops === 0 ? 'Direct' : `${stops} stop${stops > 1 ? 's' : ''}`;
+
+export const CABIN_LABEL: Record<string, string> = {
+  economy: 'Economy',
+  premium_economy: 'Premium economy',
+  business: 'Business',
+  first: 'First',
+};
+
+/** "2 adults · 1 child" - infants are called out because they change the fare. */
+export function formatPassengers(adults: number, children: number, infants: number): string {
+  const parts = [`${adults} adult${adults === 1 ? '' : 's'}`];
+  if (children) parts.push(`${children} child${children === 1 ? '' : 'ren'}`);
+  if (infants) parts.push(`${infants} infant${infants === 1 ? '' : 's'}`);
+  return parts.join(' · ');
+}
+
+/**
+ * SQLite hands back "YYYY-MM-DD HH:MM:SS" in UTC with no zone marker, which
+ * `new Date()` would read as local time and shift by the offset.
+ */
+export function parseSqlTimestamp(value: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(`${value.replace(' ', 'T')}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function formatTimestamp(value: string | null): string {
+  const date = parseSqlTimestamp(value);
+  return date ? date.toLocaleString() : '—';
+}

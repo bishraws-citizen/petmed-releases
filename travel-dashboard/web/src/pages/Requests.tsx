@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom';
 
 import { api, buildQuery, useResource } from '../lib/api';
 import {
-  centsToDollars, dollarsToCents, formatDate, formatMoney, todayIso,
+  CABIN_LABEL, centsToDollars, dollarsToCents, formatDate, formatMoney,
+  formatPassengers, todayIso,
 } from '../lib/format';
 import { REQUEST_STATUSES, requestTone } from '../lib/status';
-import type { Client, RequestStatus, TravelRequest } from '../lib/types';
+import { FlightSearchPanel } from '../components/FlightSearchPanel';
+import type { CabinClass, Client, RequestStatus, TravelRequest } from '../lib/types';
 import {
   Badge, Card, EmptyState, Field, Modal, Segmented, TableSkeleton, useDebounced, useToast,
 } from '../components/ui';
@@ -29,6 +31,7 @@ export function RequestsPage() {
 
   const [editing, setEditing] = useState<TravelRequest | 'new' | null>(null);
   const [converting, setConverting] = useState<TravelRequest | null>(null);
+  const [searching, setSearching] = useState<TravelRequest | null>(null);
 
   const rows = requests.data ?? [];
 
@@ -71,9 +74,9 @@ export function RequestsPage() {
                 <tr>
                   <th scope="col">Reference</th>
                   <th scope="col">Client</th>
-                  <th scope="col">Destination</th>
+                  <th scope="col">Route</th>
                   <th scope="col">Travel dates</th>
-                  <th scope="col" className="num">Pax</th>
+                  <th scope="col">Passengers</th>
                   <th scope="col" className="num">Budget</th>
                   <th scope="col">Status</th>
                   <th scope="col" className="num">Actions</th>
@@ -87,12 +90,20 @@ export function RequestsPage() {
                       <div>{request.client_name}</div>
                       {request.client_company ? <div className="sub">{request.client_company}</div> : null}
                     </td>
-                    <td>{request.destination}</td>
+                    <td>
+                      <div>{request.origin || <span className="sub">No origin</span>} → {request.destination}</div>
+                      <div className="sub">{CABIN_LABEL[request.cabin_class] ?? request.cabin_class}</div>
+                    </td>
                     <td>
                       {formatDate(request.depart_date)}
                       <span className="sub"> → {formatDate(request.return_date)}</span>
                     </td>
-                    <td className="num">{request.travelers}</td>
+                    <td>
+                      <div>{request.travelers}</div>
+                      <div className="sub">
+                        {formatPassengers(request.adults, request.children, request.infants)}
+                      </div>
+                    </td>
                     <td className="num">{formatMoney(request.budget_cents)}</td>
                     <td>
                       <Badge tone={requestTone[request.status]}>
@@ -116,6 +127,14 @@ export function RequestsPage() {
                             Convert
                           </button>
                         )}
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => setSearching(request)}
+                          title="Search the airline site for live fares"
+                        >
+                          Search flights
+                        </button>
                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(request)}>
                           Edit
                         </button>
@@ -139,6 +158,10 @@ export function RequestsPage() {
             requests.reload();
           }}
         />
+      ) : null}
+
+      {searching ? (
+        <FlightSearchPanel request={searching} onClose={() => setSearching(null)} />
       ) : null}
 
       {converting ? (
@@ -171,10 +194,14 @@ function RequestForm({
 
   const [form, setForm] = useState({
     client_id: String(request?.client_id ?? clients[0]?.id ?? ''),
+    origin: request?.origin ?? '',
     destination: request?.destination ?? '',
     depart_date: request?.depart_date ?? '',
     return_date: request?.return_date ?? '',
-    travelers: String(request?.travelers ?? 2),
+    adults: String(request?.adults ?? 2),
+    children: String(request?.children ?? 0),
+    infants: String(request?.infants ?? 0),
+    cabin_class: request?.cabin_class ?? ('economy' as CabinClass),
     budget: request ? centsToDollars(request.budget_cents) : '',
     status: request?.status ?? ('new' as RequestStatus),
     notes: request?.notes ?? '',
@@ -189,10 +216,14 @@ function RequestForm({
     setError(undefined);
     const payload = {
       client_id: Number(form.client_id),
+      origin: form.origin,
       destination: form.destination,
       depart_date: form.depart_date,
       return_date: form.return_date,
-      travelers: Number(form.travelers),
+      adults: Number(form.adults),
+      children: Number(form.children),
+      infants: Number(form.infants),
+      cabin_class: form.cabin_class,
       budget_cents: dollarsToCents(form.budget),
       status: form.status,
       notes: form.notes,
@@ -244,7 +275,19 @@ function RequestForm({
             )}
           </Field>
 
-          <Field label="Destination" full>
+          <Field label="From" hint="City or IATA code, e.g. LGW">
+            {(id) => (
+              <input
+                id={id}
+                className="input"
+                placeholder="London, United Kingdom"
+                value={form.origin}
+                onChange={(event) => set('origin', event.target.value)}
+              />
+            )}
+          </Field>
+
+          <Field label="To" hint="City or IATA code, e.g. LIS">
             {(id) => (
               <input
                 id={id}
@@ -287,18 +330,49 @@ function RequestForm({
             )}
           </Field>
 
-          <Field label="Travellers">
+          <div className="field full">
+            <span className="field-label">Passengers</span>
+            <div className="pax-grid">
+              <Field label="Adults">
+                {(id) => (
+                  <input id={id} className="input" type="number" min={1} max={9} required
+                    value={form.adults} onChange={(event) => set('adults', event.target.value)} />
+                )}
+              </Field>
+              <Field label="Children">
+                {(id) => (
+                  <input id={id} className="input" type="number" min={0} max={9}
+                    value={form.children} onChange={(event) => set('children', event.target.value)} />
+                )}
+              </Field>
+              <Field
+                label="Infants"
+                error={Number(form.infants) > Number(form.adults)
+                  ? 'One adult per infant' : undefined}
+              >
+                {(id) => (
+                  <input id={id} className="input" type="number" min={0} max={9}
+                    value={form.infants} onChange={(event) => set('infants', event.target.value)} />
+                )}
+              </Field>
+            </div>
+            <span className="field-hint">
+              Total party: {Number(form.adults || 0) + Number(form.children || 0) + Number(form.infants || 0)}
+            </span>
+          </div>
+
+          <Field label="Cabin class">
             {(id) => (
-              <input
+              <select
                 id={id}
-                className="input"
-                type="number"
-                min={1}
-                max={99}
-                required
-                value={form.travelers}
-                onChange={(event) => set('travelers', event.target.value)}
-              />
+                className="select"
+                value={form.cabin_class}
+                onChange={(event) => set('cabin_class', event.target.value as CabinClass)}
+              >
+                {Object.entries(CABIN_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             )}
           </Field>
 

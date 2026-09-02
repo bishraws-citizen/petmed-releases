@@ -53,6 +53,16 @@ const TRIPS = [
   ['Edinburgh, Scotland', 'hotel', 'Caledonia Rooms'],
 ];
 
+/** The agency's home departure markets. */
+const ORIGINS = [
+  'London, United Kingdom',
+  'Manchester, United Kingdom',
+  'Dublin, Ireland',
+  'Birmingham, United Kingdom',
+];
+
+const CABINS = ['economy', 'economy', 'economy', 'economy', 'premium_economy', 'business'];
+
 const NOTES = [
   'Prefers window seats and a late checkout.',
   'Travelling with two under-12s — needs connecting rooms.',
@@ -65,8 +75,10 @@ const NOTES = [
 
 function reset() {
   db.exec('PRAGMA foreign_keys = OFF');
-  db.exec('DELETE FROM payments; DELETE FROM bookings; DELETE FROM requests; DELETE FROM clients;');
-  db.exec("DELETE FROM sqlite_sequence WHERE name IN ('payments','bookings','requests','clients')");
+  db.exec(`DELETE FROM flight_offers; DELETE FROM flight_searches;
+           DELETE FROM payments; DELETE FROM bookings; DELETE FROM requests; DELETE FROM clients;`);
+  db.exec(`DELETE FROM sqlite_sequence
+           WHERE name IN ('flight_offers','flight_searches','payments','bookings','requests','clients')`);
   db.exec('PRAGMA foreign_keys = ON');
 }
 
@@ -96,6 +108,15 @@ function seed() {
     const [destination, productType, supplier] = pick(TRIPS);
     const clientId = pick(clientIds);
     const travelers = between(1, 6);
+    // Split the party into fare types; a lap infant always travels with an adult.
+    const accompanied = Math.min(2, travelers - 1);
+    const adults = travelers - between(0, accompanied);
+    const remaining = travelers - adults;
+    const infants = remaining > 0 && random() < 0.3 ? 1 : 0;
+    const children = remaining - infants;
+    const cabin = pick(CABINS);
+    let origin = pick(ORIGINS);
+    while (origin.split(',')[0] === destination.split(',')[0]) origin = pick(ORIGINS);
     const leadTime = between(35, 210);
     const nights = between(4, 14);
     const depart = shiftDays(-daysAgo + leadTime);
@@ -110,14 +131,21 @@ function seed() {
 
     requestSeq += 1;
     const { lastInsertRowid } = run(
-      `INSERT INTO requests (reference, client_id, destination, depart_date, return_date,
-                             travelers, budget_cents, status, notes, created_at, updated_at)
-       VALUES (:reference, :client_id, :destination, :depart_date, :return_date,
-               :travelers, :budget_cents, :status, :notes, :created_at, :created_at)`,
+      `INSERT INTO requests (reference, client_id, origin, destination, depart_date, return_date,
+                             travelers, adults, children, infants, cabin_class,
+                             budget_cents, status, notes, created_at, updated_at)
+       VALUES (:reference, :client_id, :origin, :destination, :depart_date, :return_date,
+               :travelers, :adults, :children, :infants, :cabin_class,
+               :budget_cents, :status, :notes, :created_at, :created_at)`,
       {
         reference: ref('REQ', requestSeq),
         client_id: clientId,
+        origin,
         destination,
+        adults,
+        children,
+        infants,
+        cabin_class: cabin,
         depart_date: iso(depart),
         return_date: iso(shiftDays(nights, depart)),
         travelers,

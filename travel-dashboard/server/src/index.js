@@ -8,6 +8,8 @@ import { requests } from './routes/requests.js';
 import { bookings } from './routes/bookings.js';
 import { payments } from './routes/payments.js';
 import { overview } from './routes/overview.js';
+import { flights } from './routes/flights.js';
+import { mockAirline } from './mock-airline/index.js';
 import { HttpError } from './validate.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +24,13 @@ app.use('/api/clients', clients);
 app.use('/api/requests', requests);
 app.use('/api/bookings', bookings);
 app.use('/api/payments', payments);
+app.use('/api/flights', flights);
+
+// A local stand-in airline used to test the automation end to end. It is a
+// test fixture, so it is not served in production.
+if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_MOCK_AIRLINE === 'true') {
+  app.use('/mock-airline', mockAirline);
+}
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Unknown endpoint' }));
 
