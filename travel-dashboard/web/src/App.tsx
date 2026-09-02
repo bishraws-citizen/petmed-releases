@@ -10,6 +10,7 @@ import { BookingDetailPage } from './pages/BookingDetail';
 import { PaymentsPage } from './pages/Payments';
 import { ClientsPage } from './pages/Clients';
 import { QuotesPage } from './pages/Quotes';
+import { OrdersPage } from './pages/Orders';
 import { SettingsPage } from './pages/Settings';
 import { CustomerQuotePage } from './pages/CustomerQuote';
 
@@ -18,6 +19,7 @@ const PAGES = [
   { to: '/requests', label: 'Requests', title: 'Travel requests', sub: 'Enquiries from first contact to a won booking' },
   { to: '/bookings', label: 'Bookings', title: 'Bookings', sub: 'Confirmed travel, suppliers and margin' },
   { to: '/quotes', label: 'Quotations', title: 'Quotations', sub: 'Pricing, markup and what the customer was sent' },
+  { to: '/orders', label: 'Orders', title: 'Booking requests', sub: 'Confirmed customers, locked prices and ticketing' },
   { to: '/payments', label: 'Payments', title: 'Payments', sub: 'Deposits, balances and refunds' },
   { to: '/clients', label: 'Clients', title: 'Clients', sub: 'Everyone the agency books for' },
   { to: '/settings', label: 'Settings', title: 'Agency settings', sub: 'Exchange rate, rounding, markup defaults and terms' },
@@ -98,6 +100,8 @@ export function App() {
             <Route path="/bookings/:id" element={<BookingDetailPage />} />
             <Route path="/quotes" element={<QuotesPage />} />
             <Route path="/quotes/:id" element={<QuotesPage />} />
+            <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/orders/:id" element={<OrdersPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/clients" element={<ClientsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

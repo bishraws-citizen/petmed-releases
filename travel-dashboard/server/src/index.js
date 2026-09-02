@@ -12,6 +12,7 @@ import { flights } from './routes/flights.js';
 import { quotes } from './routes/quotes.js';
 import { settings } from './routes/settings.js';
 import { publicQuotes } from './routes/public.js';
+import { orders } from './routes/orders.js';
 import { ensureBaseline } from './pricing/settings.js';
 import { mockAirline } from './mock-airline/index.js';
 import { HttpError } from './validate.js';
@@ -33,6 +34,7 @@ app.use('/api/payments', payments);
 app.use('/api/flights', flights);
 app.use('/api/quotes', quotes);
 app.use('/api/settings', settings);
+app.use('/api/orders', orders);
 // Customer-facing, addressed by token; never exposes internal pricing.
 app.use('/api/public', publicQuotes);
 

@@ -16,6 +16,7 @@ into bookings, and track the money against each booking until it is settled.
 | **Clients** | Contact details plus request count, booking count and lifetime value. |
 | **Flight search** | A **Search flights** button on any request drives an airline site with Playwright, reads the published fares, and returns them in one standard shape. It never books. |
 | **Quotations** | Apply markup to searched fares, price them in IQD with a USD equivalent, and send the customer a quotation they can confirm. Employees see cost, markup and profit; customers never do. |
+| **Orders** | A customer confirms a quotation and it becomes a booking request with its price locked. Employees see passengers, payment state, ticketing status and the full history. |
 | **Settings** | Exchange rates, IQD rounding, default markup and quote validity — all administrator-editable. |
 
 ## Running it
@@ -52,6 +53,8 @@ server/          Express API over SQLite (node:sqlite), plain ESM — no build s
   src/pricing/       settings, exchange rates, and the pure pricing engine
   src/quotes/        quotation service: build, reprice, status, customer view
   src/messaging/     WhatsApp message builder (sending is a separate concern)
+  src/orders/        confirmation, the order status machine, passenger profiles
+  src/booking/       authorized booking channels, and the pre-ticketing re-check
   src/mock-airline/  a fictional airline site the tests drive
   src/seed.js        deterministic sample data
 web/             Vite + React + TypeScript
@@ -160,12 +163,15 @@ question for you and your legal advisers, not something the code can settle.
 
 ### Tests
 
-`npm test` runs 30 checks. The flight-search suite drives a real browser against
+`npm test` runs 40 checks. The flight-search suite drives a real browser against
 the mock airline (parser edge cases, airport resolution, one-way and return
 searches, cabin class affecting fares, and each stop-for-a-human path). The
 pricing and quotation suites cover currency normalization, both markup methods,
 IQD rounding modes, manual overrides, rate-change immutability, expiry, the
-customer-projection leak check, and transaction rollback on a bad fare.
+customer-projection leak check, and transaction rollback on a bad fare. The
+order suite covers the price lock surviving a rate change and a reprice, expiry
+blocking confirmation, passenger snapshotting, every guard in the status
+machine, and automated booking channels refusing until connected.
 
 ## Pricing and quotations
 
@@ -248,6 +254,86 @@ API provider can be connected later without touching the quotation system. The
 message is built from the customer projection, so it cannot contain internal
 pricing either.
 
+## Customer confirmation and orders
+
+A customer who opens their WhatsApp link walks through three steps: choose a
+flight, give traveller details, check the summary. Confirming turns the
+quotation into an **order**.
+
+### Passengers
+
+The form collects full name, date of birth, gender, nationality, passport
+number, passport expiry, issuing country, phone, optional email and passenger
+type, and it seeds one card per traveller the request was priced for. More can be
+added.
+
+Travellers are saved to the customer's profile, so a returning customer picks
+themselves from a list instead of typing their passport again. **Saved passport
+numbers are masked on the public link** (`••••4321`) and never sent to the
+browser — choosing a saved traveller returns only their id and the server reads
+the real record itself. A quotation link is shareable by nature, so it is not a
+place to publish passport numbers.
+
+A passport that expires before the departure date is rejected, in the form and
+again on the server.
+
+### The price lock
+
+Confirming freezes everything onto the order: the selling price, the exchange
+rate, the markup, the full flight details and the quote expiry that was in
+force. Nothing recomputes them afterwards. Changing the agency's rate, editing
+the markup, or repricing the quotation moves the *quotation* and leaves the
+order exactly where it was — there is a test that does precisely this and
+asserts the two diverge.
+
+An expired quotation cannot be confirmed at all: the API refuses with
+`QUOTE_EXPIRED` and the flight price and availability have to be re-checked
+first.
+
+### Order lifecycle
+
+```
+draft -> quoted -> sent -> customer_confirmed -> awaiting_payment -> paid
+                                      -> booking_in_progress -> booked
+                                      \-> failed    \-> cancelled
+```
+
+Transitions are guarded: an order cannot jump from awaiting payment to booked,
+and `booked` is terminal. Every move is written to an event trail with who did
+it and why.
+
+### Payment
+
+**No payment gateway is connected.** Money is reconciled by a person — a
+consultant records that a transfer landed, with a method and reference — which
+moves the order to `paid`. That action is deliberately the exact seam a gateway
+webhook will take over: when one is added it writes the same record and nothing
+downstream changes.
+
+### Booking channels
+
+Ticketing is modelled as a pluggable **authorized channel**, not as more browser
+automation. The flight-search module is a *shopping* tool: it reads published
+fares from a public website. Issuing a ticket is a different act needing
+ticketing authority and a channel the airline recognises.
+
+| Channel | Automated | Status |
+| --- | --- | --- |
+| Agent portal (issued by staff) | no | available |
+| GDS (Amadeus / Sabre / Travelport) | yes | not connected |
+| NDC (direct, aggregator, or via GDS) | yes | not connected |
+
+The automated channels are declared with their prerequisites and **refuse to
+issue** until actually connected, so a deployment can never quietly believe it
+booked something it did not. Today a consultant issues the ticket and records the
+PNR; the order already carries everything a PNR build needs.
+
+Before ticketing, **Re-check price & availability** runs the search module
+against the airline and reports whether the fare moved, disappeared, or hit
+something needing a human. It is advisory: the customer's locked price does not
+change either way, and a person decides whether to absorb the difference,
+re-quote, or proceed.
+
 ## The wider pipeline
 
 This module is stage four of a longer workflow. Stages already built are marked:
@@ -261,18 +347,20 @@ Customer sends request                      [built]
   -> quotation created                      [built]
   -> quotation sent via WhatsApp            [built - message; sending is manual]
   -> customer selects flight                [built]
-  -> customer pays                          (not built)
-  -> system detects payment                 (not built)
-  -> availability and price re-checked      (not built - the search module is the hook)
-  -> booking completed automatically        (not built)
+  -> customer confirms + passengers         [built]
+  -> price locked, order created            [built]
+  -> customer pays                          (not built - no gateway)
+  -> system detects payment                 (manual today; the seam is built)
+  -> availability and price re-checked      [built - advisory]
+  -> booking on an authorized channel       (channel abstraction built; GDS/NDC not connected)
+  -> PNR / ticket recorded                  [built - recorded by staff]
   -> confirmation sent to customer          (not built)
 ```
 
-Payment and booking are deliberately absent. The seams they will use already
-exist: the payment statuses are in the schema, `payments` rows already attach to
-bookings, the re-check step is a call into the flight-search module that is
-already built, and quotations already snapshot the exact flight and price a
-booking would need to verify against.
+What is deliberately absent is payment processing and automatic ticket purchase.
+Everything they need already exists: the statuses, the guarded transitions, the
+event trail, the locked price, the re-check step, and a booking-channel
+interface with GDS and NDC declared but not connected.
 
 ## API
 
@@ -299,7 +387,15 @@ All endpoints live under `/api`. Amounts in and out are in cents.
 | `POST` | `/quotes/:id/reprice` | re-base on today's rate and extend the expiry |
 | `POST` | `/quotes/:id/whatsapp` | generate the customer message and `wa.me` link |
 | `GET` | `/public/quotes/:token` | **customer-facing**; allow-listed fields only |
-| `POST` | `/public/quotes/:token/select` | customer confirms a flight; refused once expired |
+| `POST` | `/public/quotes/:token/select` | customer marks which flight they are choosing |
+| `GET` | `/public/quotes/:token/passengers` | **customer-facing**; saved travellers, passports masked |
+| `POST` | `/public/quotes/:token/confirm` | customer confirms with passengers; creates the order |
+| `GET` `POST` | `/orders`, `/orders/:id` | booking requests with locked pricing |
+| `POST` | `/orders/:id/status` | guarded status transition |
+| `POST` | `/orders/:id/payment` | record that money arrived (manual reconciliation) |
+| `POST` | `/orders/:id/verify` | re-check fare and availability before ticketing |
+| `POST` | `/orders/:id/booking` | record the PNR and ticket numbers |
+| `GET` | `/orders/channels` | which booking channels exist and which are connected |
 
 Filters worth knowing: `/payments?overdue=true` returns everything still pending
 past its due date, and `/bookings?q=` searches reference, supplier, destination,
@@ -335,6 +431,9 @@ palette, and follows the OS setting until the sidebar toggle overrides it.
 - **Searches run one at a time**, in the API process. That is deliberate (a
   browser is heavy, and hammering an airline is rude), but it means a queued
   search waits. A separate worker would be the next step.
+- **Ticketing is not automated, by design.** GDS and NDC are declared channels
+  but not connected; a consultant issues the ticket and records the PNR. Whether
+  an agency may issue on a given carrier depends on its own ticketing authority.
 - **No authentication.** "Prepared by" is a dropdown, not a login, and any
   visitor with the dashboard URL sees internal pricing. Customer quotation links
   are unguessable random tokens, which is right for a share link but is not a

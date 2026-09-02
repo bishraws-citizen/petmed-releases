@@ -194,3 +194,39 @@ export function expiryDistance(value: string): string {
       : plural(Math.round(abs / 1440), 'day');
   return minutes >= 0 ? `in ${unit}` : `${unit} ago`;
 }
+
+export const ORDER_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  quoted: 'Quoted',
+  sent: 'Sent',
+  customer_confirmed: 'Customer confirmed',
+  awaiting_payment: 'Awaiting payment',
+  paid: 'Paid',
+  booking_in_progress: 'Booking in progress',
+  booked: 'Booked',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+
+export const PAYMENT_STATE_LABEL: Record<string, string> = {
+  unpaid: 'Unpaid',
+  awaiting: 'Awaiting',
+  received: 'Received',
+  refunded: 'Refunded',
+};
+
+export const PASSENGER_TYPE_LABEL: Record<string, string> = {
+  adult: 'Adult', child: 'Child', infant: 'Infant',
+};
+
+/** "2 Adults · 1 Child" for the confirmation summary. */
+export function summarisePassengers(counts: { adult: number; child: number; infant: number }): string {
+  return (['adult', 'child', 'infant'] as const)
+    .filter((type) => counts[type] > 0)
+    .map((type) => {
+      const n = counts[type];
+      const label = PASSENGER_TYPE_LABEL[type];
+      return `${n} ${n === 1 ? label : `${label}${type === 'child' ? 'ren' : 's'}`}`;
+    })
+    .join(' · ');
+}

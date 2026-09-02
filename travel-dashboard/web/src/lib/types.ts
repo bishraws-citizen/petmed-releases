@@ -343,3 +343,140 @@ export interface AgencySettings {
   quote_validity_hours: number;
   quote_terms: string;
 }
+
+export type OrderStatus =
+  | 'draft' | 'quoted' | 'sent' | 'customer_confirmed' | 'awaiting_payment'
+  | 'paid' | 'booking_in_progress' | 'booked' | 'failed' | 'cancelled';
+
+export type PaymentState = 'unpaid' | 'awaiting' | 'received' | 'refunded';
+export type Gender = 'male' | 'female' | 'unspecified';
+export type PassengerType = 'adult' | 'child' | 'infant';
+
+/** What the confirmation form collects for each traveller. */
+export interface PassengerInput {
+  full_name: string;
+  date_of_birth: string;
+  gender: Gender;
+  nationality: string;
+  passport_number: string;
+  passport_expiry: string;
+  passport_country: string;
+  phone: string;
+  email: string;
+  passenger_type: PassengerType;
+}
+
+/** A traveller already on file. Passport numbers are masked on public links. */
+export interface SavedPassenger {
+  id: number;
+  full_name: string;
+  passenger_type: PassengerType;
+  nationality: string;
+  date_of_birth: string;
+  passport_country: string;
+  passport_expiry: string;
+  passport_masked: string;
+  has_passport: boolean;
+}
+
+export interface OrderPassenger extends PassengerInput {
+  id: number;
+  order_id: number;
+  passenger_id: number | null;
+  position: number;
+}
+
+export interface OrderEvent {
+  id: number;
+  at: string;
+  actor: 'customer' | 'employee' | 'system';
+  actor_name: string;
+  from_status: string;
+  to_status: string;
+  note: string;
+}
+
+export interface Order {
+  id: number;
+  reference: string;
+  quote_id: number;
+  quote_item_id: number;
+  client_id: number;
+  employee_id: number | null;
+  status: OrderStatus;
+  locked_at: string;
+  iqd_per_usd: number;
+  airline_price_cents: number;
+  airline_currency: string;
+  cost_usd_cents: number;
+  markup_type: MarkupType;
+  markup_value: number;
+  markup_currency: MarkupCurrency;
+  markup_usd_cents: number;
+  final_iqd_cents: number;
+  final_usd_cents: number;
+  profit_usd_cents: number;
+  quote_expires_at: string;
+  airline: string;
+  flight_number: string;
+  origin: string;
+  destination: string;
+  depart_date: string;
+  return_date: string | null;
+  depart_time: string;
+  arrive_time: string;
+  duration_minutes: number | null;
+  stops: number | null;
+  baggage: string;
+  payment_status: PaymentState;
+  payment_method: string;
+  payment_reference: string;
+  payment_received_at: string | null;
+  booking_channel: string;
+  booking_reference: string;
+  ticket_numbers: string;
+  booked_at: string | null;
+  failure_reason: string;
+  customer_confirmed_at: string | null;
+  customer_note: string;
+  internal_notes: string;
+  created_at: string;
+  client_name: string;
+  client_email: string;
+  client_phone: string;
+  employee_name: string | null;
+  quote_reference: string | null;
+  quote_status: QuoteStatus | null;
+  public_token: string | null;
+  passengers: OrderPassenger[];
+  events: OrderEvent[];
+  passenger_count?: number;
+  allowed_transitions?: OrderStatus[];
+}
+
+/** The order as the customer sees it after confirming. */
+export interface CustomerOrder {
+  reference: string;
+  status: OrderStatus;
+  payment_status: PaymentState;
+  confirmed_at: string | null;
+  flight: {
+    airline: string; flight_number: string; origin: string; destination: string;
+    depart_date: string; return_date: string | null; depart_time: string; arrive_time: string;
+    duration_minutes: number | null; stops: number | null; baggage: string;
+  };
+  price_iqd_cents: number;
+  price_usd_cents: number;
+  passengers: Array<{ full_name: string; passenger_type: PassengerType }>;
+  booking_reference: string | null;
+}
+
+export interface BookingChannel {
+  id: string;
+  label: string;
+  kind: 'manual' | 'gds' | 'ndc';
+  automated: boolean;
+  connected: boolean;
+  requirements: string[];
+  description: string;
+}
