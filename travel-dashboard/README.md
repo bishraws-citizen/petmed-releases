@@ -163,7 +163,9 @@ question for you and your legal advisers, not something the code can settle.
 
 ### Tests
 
-`npm test` runs 40 checks. The flight-search suite drives a real browser against
+`npm test` runs 40 checks and is self-contained — it starts its own mock
+airline on an ephemeral port and creates its own fixtures, so it passes on a
+fresh checkout with nothing else running and no seeding. The flight-search suite drives a real browser against
 the mock airline (parser edge cases, airport resolution, one-way and return
 searches, cabin class affecting fares, and each stop-for-a-human path). The
 pricing and quotation suites cover currency normalization, both markup methods,

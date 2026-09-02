@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test, before } from 'node:test';
 
 import { db, one, run } from '../src/db.js';
+import { ensureTestClient, ensureTestRequest } from './fixtures.mjs';
 import { ensureBaseline, upsertRate } from '../src/pricing/settings.js';
 import { createQuote, loadQuote, repriceQuote, setStatus } from '../src/quotes/service.js';
 import {
@@ -55,8 +56,8 @@ before(() => {
   ensureBaseline();
   upsertRate('IQD', 1310, 'test');
   upsertRate('EUR', 0.92, 'test');
-  clientId = one('SELECT id FROM clients LIMIT 1').id;
-  requestId = one('SELECT id FROM requests LIMIT 1').id;
+  clientId = ensureTestClient();
+  requestId = ensureTestRequest(clientId);
 });
 
 test('confirming a quotation creates an order and lands on awaiting payment', () => {

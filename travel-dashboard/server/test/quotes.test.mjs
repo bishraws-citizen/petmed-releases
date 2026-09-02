@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test, before } from 'node:test';
 
 import { db, one, run } from '../src/db.js';
+import { ensureTestClient, ensureTestRequest } from './fixtures.mjs';
 import { ensureBaseline, upsertRate, writeSettings } from '../src/pricing/settings.js';
 import {
   createQuote, customerView, effectiveStatus, isExpired, loadQuote,
@@ -11,15 +12,15 @@ import { buildQuotationMessage } from '../src/messaging/whatsapp.js';
 
 /** A search and two fares to quote from, independent of the scraper. */
 function seedOffers() {
-  const client = one('SELECT id FROM clients LIMIT 1');
-  const request = one('SELECT id FROM requests LIMIT 1');
+  const clientId = ensureTestClient();
+  const requestId = ensureTestRequest(clientId);
 
   const search = run(
     `INSERT INTO flight_searches (reference, request_id, adapter, status, origin, destination,
                                   depart_date, adults, children, infants, cabin_class)
      VALUES (:ref, :rid, 'mock', 'completed', 'Baghdad, Iraq', 'Istanbul, Turkey',
              '2026-09-15', 1, 0, 0, 'economy')`,
-    { ref: `FSTEST-${Date.now()}`, rid: request.id },
+    { ref: `FSTEST-${Date.now()}`, rid: requestId },
   );
   const searchId = Number(search.lastInsertRowid);
 
@@ -38,7 +39,7 @@ function seedOffers() {
     return Number(inserted.lastInsertRowid);
   });
 
-  return { clientId: client.id, requestId: request.id, offerIds };
+  return { clientId, requestId, offerIds };
 }
 
 let fixture;

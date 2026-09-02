@@ -2,15 +2,35 @@
  * End-to-end checks for the flight-search automation, run against the bundled
  * mock airline. Covers the happy paths and every stop-for-a-human path.
  *
- *   npm run test:search        (the API server must be running)
+ *   npm test                   (self-contained; nothing else need be running)
  */
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test, before, after } from 'node:test';
+import express from 'express';
+
+import { mockAirline } from '../src/mock-airline/index.js';
 
 import { runFlightSearch } from '../src/automation/search.js';
 import { InterventionRequired, REASON } from '../src/automation/errors.js';
 import { parsePrice, parseDuration, parseStops, parseTime, parseFlightNumber } from '../src/automation/normalize.js';
 import { resolveAirport } from '../src/automation/airports.js';
+
+/**
+ * The suite hosts the mock airline itself on an ephemeral port, so it does not
+ * quietly depend on a dev server already running somewhere.
+ */
+let airline;
+
+before(async () => {
+  const app = express();
+  app.use('/mock-airline', mockAirline);
+  airline = await new Promise((resolve) => {
+    const server = app.listen(0, '127.0.0.1', () => resolve(server));
+  });
+  process.env.MOCK_AIRLINE_URL = `http://127.0.0.1:${airline.address().port}/mock-airline`;
+});
+
+after(() => new Promise((resolve) => airline.close(resolve)));
 
 const BASE = {
   adapter: 'mock',
