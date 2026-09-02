@@ -7,6 +7,7 @@ import {
 } from '../lib/format';
 import type { AdapterInfo, FlightOffer, FlightSearch, TravelRequest } from '../lib/types';
 import { Badge, EmptyState, Modal, Skeleton, useToast } from './ui';
+import { QuoteFromOffers } from './QuoteFromOffers';
 
 const IN_FLIGHT = new Set(['queued', 'running']);
 
@@ -160,7 +161,7 @@ export function FlightSearchPanel({
           </div>
         ) : null}
 
-        {search && !running ? <SearchOutcome search={search} /> : null}
+        {search && !running ? <SearchOutcome search={search} request={request} /> : null}
 
         {!search && history.data?.length ? (
           <section>
@@ -197,7 +198,7 @@ function StatusBadge({ status }: { status: FlightSearch['status'] }) {
   return <Badge tone="warning">{status === 'queued' ? 'Queued' : 'Running'}</Badge>;
 }
 
-function SearchOutcome({ search }: { search: FlightSearch }) {
+function SearchOutcome({ search, request }: { search: FlightSearch; request: TravelRequest }) {
   if (search.status === 'intervention_required' || search.status === 'failed') {
     return <InterventionNotice search={search} />;
   }
@@ -216,6 +217,7 @@ function SearchOutcome({ search }: { search: FlightSearch }) {
 
   return (
     <section>
+      <QuoteFromOffers search={search} request={request} />
       <div className="stat-foot" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
         <span>
           <strong>{search.offer_count}</strong> offer{search.offer_count === 1 ? '' : 's'} from{' '}

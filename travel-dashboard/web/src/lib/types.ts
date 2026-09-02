@@ -202,3 +202,144 @@ export interface AdapterInfo {
   airline: string;
   verified: boolean;
 }
+
+export type QuoteStatus =
+  | 'draft' | 'sent' | 'viewed' | 'customer_selected'
+  | 'awaiting_payment' | 'paid' | 'expired' | 'cancelled';
+
+export type MarkupType = 'percent' | 'fixed';
+export type MarkupCurrency = 'USD' | 'IQD';
+
+/** One flight on a quotation, with the internal pricing employees may see. */
+export interface QuoteItem {
+  id: number;
+  quote_id: number;
+  search_id: number | null;
+  offer_id: number | null;
+  position: number;
+  airline: string;
+  airline_code: string;
+  flight_number: string;
+  origin: string;
+  destination: string;
+  direction: 'outbound' | 'inbound';
+  depart_date: string;
+  return_date: string | null;
+  depart_time: string;
+  arrive_time: string;
+  duration_minutes: number | null;
+  stops: number | null;
+  baggage: string;
+  fare_brand: string;
+  airline_price_cents: number;
+  airline_currency: string;
+  fx_airline_per_usd: number;
+  cost_usd_cents: number;
+  markup_type: MarkupType;
+  markup_value: number;
+  markup_currency: MarkupCurrency;
+  markup_usd_cents: number;
+  override_iqd_cents: number | null;
+  final_iqd_cents: number;
+  final_usd_cents: number;
+  profit_usd_cents: number;
+}
+
+export interface Quote {
+  id: number;
+  reference: string;
+  public_token: string;
+  public_url?: string;
+  client_id: number;
+  request_id: number | null;
+  employee_id: number | null;
+  status: QuoteStatus;
+  effective_status: QuoteStatus;
+  is_expired: boolean;
+  iqd_per_usd: number;
+  rounding_step_iqd: number;
+  rounding_mode: 'nearest' | 'up' | 'down';
+  total_cost_usd_cents: number;
+  total_markup_usd_cents: number;
+  total_iqd_cents: number;
+  total_usd_cents: number;
+  profit_usd_cents: number;
+  terms: string;
+  internal_notes: string;
+  expires_at: string;
+  sent_at: string | null;
+  viewed_at: string | null;
+  selected_at: string | null;
+  cancelled_at: string | null;
+  selected_item_id: number | null;
+  customer_confirmed: number;
+  created_at: string;
+  client_name: string;
+  client_email: string;
+  client_phone: string;
+  employee_name: string | null;
+  request_reference: string | null;
+  request_origin: string | null;
+  request_destination: string | null;
+  items: QuoteItem[];
+  item_count?: number;
+}
+
+/** Exactly what a customer receives — no internal pricing exists on this shape. */
+export interface CustomerQuote {
+  reference: string;
+  status: QuoteStatus;
+  is_expired: boolean;
+  expires_at: string;
+  terms: string;
+  agency: { name: string; phone: string; email: string };
+  customer: { name: string; email: string; phone: string };
+  trip: {
+    origin: string; destination: string; depart_date: string; return_date: string | null;
+    adults: number | null; children: number | null; infants: number | null; cabin_class: string | null;
+  };
+  selected_item_id: number | null;
+  options: Array<{
+    id: number;
+    airline: string;
+    flight_number: string;
+    origin: string;
+    destination: string;
+    direction: 'outbound' | 'inbound';
+    depart_date: string;
+    depart_time: string;
+    arrive_time: string;
+    duration_minutes: number | null;
+    stops: number | null;
+    baggage: string;
+    price_iqd_cents: number;
+    price_usd_cents: number;
+  }>;
+}
+
+export interface Employee {
+  id: number;
+  name: string;
+  email: string;
+  role: 'consultant' | 'manager' | 'admin';
+}
+
+export interface ExchangeRate {
+  currency: string;
+  units_per_usd: number;
+  updated_at: string | null;
+  base?: boolean;
+}
+
+export interface AgencySettings {
+  agency_name: string;
+  agency_phone: string;
+  agency_email: string;
+  iqd_rounding_step: number;
+  iqd_rounding_mode: 'nearest' | 'up' | 'down';
+  default_markup_type: MarkupType;
+  default_markup_value: number;
+  default_markup_currency: MarkupCurrency;
+  quote_validity_hours: number;
+  quote_terms: string;
+}

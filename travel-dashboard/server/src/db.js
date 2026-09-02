@@ -186,6 +186,123 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_offers_search    ON flight_offers(search_id);
 `);
 
+/**
+ * Pricing, quotation and customer-selection tables.
+ *
+ * Money is stored in minor units (x100) of whatever currency the column names,
+ * IQD included. IQD is never quoted with decimals, so its minor units are
+ * notional — they exist only so every monetary column in the schema obeys the
+ * same rule and no conversion has to remember which convention applies.
+ */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS exchange_rates (
+    currency      TEXT PRIMARY KEY,
+    units_per_usd REAL NOT NULL,
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by    TEXT NOT NULL DEFAULT ''
+  );
+
+  CREATE TABLE IF NOT EXISTS employees (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    email      TEXT NOT NULL DEFAULT '',
+    role       TEXT NOT NULL DEFAULT 'consultant'
+               CHECK (role IN ('consultant','manager','admin')),
+    active     INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS quotes (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference          TEXT NOT NULL UNIQUE,
+    public_token       TEXT NOT NULL UNIQUE,
+    client_id          INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    request_id         INTEGER REFERENCES requests(id) ON DELETE SET NULL,
+    employee_id        INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    status             TEXT NOT NULL DEFAULT 'draft'
+                       CHECK (status IN ('draft','sent','viewed','customer_selected',
+                                         'awaiting_payment','paid','expired','cancelled')),
+
+    -- Rate and rounding are snapshotted per quote: changing them later must
+    -- never move the price a customer was already shown.
+    iqd_per_usd        REAL NOT NULL,
+    rounding_step_iqd  INTEGER NOT NULL DEFAULT 1000,
+    rounding_mode      TEXT NOT NULL DEFAULT 'nearest'
+                       CHECK (rounding_mode IN ('nearest','up','down')),
+
+    total_cost_usd_cents   INTEGER NOT NULL DEFAULT 0,
+    total_markup_usd_cents INTEGER NOT NULL DEFAULT 0,
+    total_iqd_cents        INTEGER NOT NULL DEFAULT 0,
+    total_usd_cents        INTEGER NOT NULL DEFAULT 0,
+    profit_usd_cents       INTEGER NOT NULL DEFAULT 0,
+
+    terms              TEXT NOT NULL DEFAULT '',
+    internal_notes     TEXT NOT NULL DEFAULT '',
+
+    expires_at         TEXT NOT NULL,
+    sent_at            TEXT,
+    viewed_at          TEXT,
+    selected_at        TEXT,
+    cancelled_at       TEXT,
+    selected_item_id   INTEGER,
+    customer_confirmed INTEGER NOT NULL DEFAULT 0,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Flight details are copied in, not referenced: a quotation must still read
+  -- correctly after the search that produced it is re-run or deleted.
+  CREATE TABLE IF NOT EXISTS quote_items (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    quote_id           INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    search_id          INTEGER,
+    offer_id           INTEGER,
+    position           INTEGER NOT NULL DEFAULT 0,
+
+    airline            TEXT NOT NULL DEFAULT '',
+    airline_code       TEXT NOT NULL DEFAULT '',
+    flight_number      TEXT NOT NULL DEFAULT '',
+    origin             TEXT NOT NULL DEFAULT '',
+    destination        TEXT NOT NULL DEFAULT '',
+    direction          TEXT NOT NULL DEFAULT 'outbound',
+    depart_date        TEXT NOT NULL DEFAULT '',
+    return_date        TEXT,
+    depart_time        TEXT NOT NULL DEFAULT '',
+    arrive_time        TEXT NOT NULL DEFAULT '',
+    duration_minutes   INTEGER,
+    stops              INTEGER,
+    baggage            TEXT NOT NULL DEFAULT '',
+    fare_brand         TEXT NOT NULL DEFAULT '',
+
+    airline_price_cents INTEGER NOT NULL DEFAULT 0,
+    airline_currency    TEXT NOT NULL DEFAULT 'USD',
+    fx_airline_per_usd  REAL NOT NULL DEFAULT 1,
+    cost_usd_cents      INTEGER NOT NULL DEFAULT 0,
+
+    markup_type        TEXT NOT NULL DEFAULT 'percent'
+                       CHECK (markup_type IN ('percent','fixed')),
+    markup_value       REAL NOT NULL DEFAULT 0,
+    markup_currency    TEXT NOT NULL DEFAULT 'USD'
+                       CHECK (markup_currency IN ('USD','IQD')),
+    markup_usd_cents   INTEGER NOT NULL DEFAULT 0,
+
+    override_iqd_cents INTEGER,
+    final_iqd_cents    INTEGER NOT NULL DEFAULT 0,
+    final_usd_cents    INTEGER NOT NULL DEFAULT 0,
+    profit_usd_cents   INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_quotes_client   ON quotes(client_id);
+  CREATE INDEX IF NOT EXISTS idx_quotes_status   ON quotes(status);
+  CREATE INDEX IF NOT EXISTS idx_quote_items_qid ON quote_items(quote_id);
+`);
+
 /** Next reference in a per-entity series, e.g. REQ-0007. */
 export function nextReference(prefix, table) {
   const row = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get();

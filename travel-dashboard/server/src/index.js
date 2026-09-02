@@ -9,11 +9,17 @@ import { bookings } from './routes/bookings.js';
 import { payments } from './routes/payments.js';
 import { overview } from './routes/overview.js';
 import { flights } from './routes/flights.js';
+import { quotes } from './routes/quotes.js';
+import { settings } from './routes/settings.js';
+import { publicQuotes } from './routes/public.js';
+import { ensureBaseline } from './pricing/settings.js';
 import { mockAirline } from './mock-airline/index.js';
 import { HttpError } from './validate.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 4000;
+
+ensureBaseline();
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
@@ -25,6 +31,10 @@ app.use('/api/requests', requests);
 app.use('/api/bookings', bookings);
 app.use('/api/payments', payments);
 app.use('/api/flights', flights);
+app.use('/api/quotes', quotes);
+app.use('/api/settings', settings);
+// Customer-facing, addressed by token; never exposes internal pricing.
+app.use('/api/public', publicQuotes);
 
 // A local stand-in airline used to test the automation end to end. It is a
 // test fixture, so it is not served in production.

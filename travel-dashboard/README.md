@@ -15,6 +15,8 @@ into bookings, and track the money against each booking until it is settled.
 | **Payments** | Deposits, balances and refunds across all bookings, filterable by status or by what is overdue. One click marks a payment received. |
 | **Clients** | Contact details plus request count, booking count and lifetime value. |
 | **Flight search** | A **Search flights** button on any request drives an airline site with Playwright, reads the published fares, and returns them in one standard shape. It never books. |
+| **Quotations** | Apply markup to searched fares, price them in IQD with a USD equivalent, and send the customer a quotation they can confirm. Employees see cost, markup and profit; customers never do. |
+| **Settings** | Exchange rates, IQD rounding, default markup and quote validity — all administrator-editable. |
 
 ## Running it
 
@@ -47,6 +49,9 @@ server/          Express API over SQLite (node:sqlite), plain ESM — no build s
   src/validate.js    field validation; every failure becomes a 400 with a message
   src/routes/        clients · requests · bookings · payments · overview · flights
   src/automation/    the flight-search module (see below)
+  src/pricing/       settings, exchange rates, and the pure pricing engine
+  src/quotes/        quotation service: build, reprice, status, customer view
+  src/messaging/     WhatsApp message builder (sending is a separate concern)
   src/mock-airline/  a fictional airline site the tests drive
   src/seed.js        deterministic sample data
 web/             Vite + React + TypeScript
@@ -155,9 +160,119 @@ question for you and your legal advisers, not something the code can settle.
 
 ### Tests
 
-`npm test` runs 12 checks against the mock airline with a real browser: parser
-edge cases, airport resolution, one-way and return searches, cabin class
-affecting fares, and each stop-for-a-human path.
+`npm test` runs 30 checks. The flight-search suite drives a real browser against
+the mock airline (parser edge cases, airport resolution, one-way and return
+searches, cabin class affecting fares, and each stop-for-a-human path). The
+pricing and quotation suites cover currency normalization, both markup methods,
+IQD rounding modes, manual overrides, rate-change immutability, expiry, the
+customer-projection leak check, and transaction rollback on a bad fare.
+
+## Pricing and quotations
+
+Searched fares flow straight into a quotation — the employee never retypes a
+flight detail.
+
+```
+Airline price  ->  normalize to USD  ->  apply agency markup
+               ->  final customer price  ->  display in IQD + USD
+```
+
+### Markup
+
+Per flight, the employee picks **a percentage of cost** or **a fixed amount**
+(stated in USD or in IQD), or sets the **selling price by hand**. Whichever is
+used, four numbers are always kept apart internally:
+
+| | |
+| --- | --- |
+| Original airline price | exactly as the airline displayed it, in its own currency |
+| Cost | that price normalized to USD at the quote's stored rate |
+| Markup | the agency's addition |
+| Profit | final selling price − cost |
+
+Profit is always measured against what the customer actually pays, so IQD
+rounding and manual overrides are both reflected honestly rather than showing
+the margin the rule *would* have produced.
+
+### IQD and USD
+
+Every quotation leads with the IQD price and shows the USD equivalent beneath
+it. The USD figure is derived from the rounded IQD figure, so the two lines
+always agree with each other.
+
+- The **USD → IQD rate is an administrator setting**, never a constant in the
+  code, and is edited under Settings.
+- **Each quotation stores the rate it was priced at.** Changing the rate later
+  moves new quotations only — a price a customer has already been shown never
+  changes underneath them. There is a test for exactly this.
+- **IQD rounding is configurable** (step and direction; default: nearest 1,000).
+- Fares in **USD, EUR, TRY, IQD or any other currency** are supported — add the
+  rate under Settings. A fare in a currency with no configured rate is refused
+  with a message rather than quoted at a guessed rate.
+
+### Quotation lifecycle
+
+```
+draft -> sent -> viewed -> customer_selected -> awaiting_payment -> paid
+                     \-> expired        \-> cancelled
+```
+
+`awaiting_payment` and `paid` exist in the schema and the type system but are
+deliberately rejected by the API until the payment stage is built.
+
+Expiry is derived from the stored `expires_at` rather than a flag, so a
+quotation cannot sit in the database claiming to be live after its time. Once
+expired, the customer sees an explanation instead of a price and **the confirm
+endpoint refuses with `409 QUOTE_EXPIRED` and `requires_recheck: true`** — the
+button being disabled is a courtesy, not the enforcement. An employee reprices
+the quotation to re-issue it at the current rate.
+
+### What the customer can and cannot see
+
+The customer's copy lives at `/q/<token>` and is built from an **explicit
+allow-list projection**, not by deleting internal fields from the full record.
+A column added to the quotes table later cannot leak by being forgotten. The
+airline's price, markup, profit, internal notes and employee details are never
+assembled into that payload at all.
+
+The customer sees: flight details, baggage, the IQD price, the USD equivalent,
+the expiry, and a Confirm button. A test asserts that none of the internal
+figures appear in the customer payload as keys *or* as values.
+
+### WhatsApp
+
+**Send to WhatsApp** generates a formatted message and a `wa.me` link the
+employee sends. Message *building* is separate from message *sending*
+(`src/messaging/whatsapp.js` exposes a `deliver()` seam), so a WhatsApp Business
+API provider can be connected later without touching the quotation system. The
+message is built from the customer projection, so it cannot contain internal
+pricing either.
+
+## The wider pipeline
+
+This module is stage four of a longer workflow. Stages already built are marked:
+
+```
+Customer sends request                      [built]
+  -> automation searches airline sites      [built - one airline]
+  -> flights collected                      [built]
+  -> agency markup applied                  [built]
+  -> IQD + USD price generated              [built]
+  -> quotation created                      [built]
+  -> quotation sent via WhatsApp            [built - message; sending is manual]
+  -> customer selects flight                [built]
+  -> customer pays                          (not built)
+  -> system detects payment                 (not built)
+  -> availability and price re-checked      (not built - the search module is the hook)
+  -> booking completed automatically        (not built)
+  -> confirmation sent to customer          (not built)
+```
+
+Payment and booking are deliberately absent. The seams they will use already
+exist: the payment statuses are in the schema, `payments` rows already attach to
+bookings, the re-check step is a call into the flight-search module that is
+already built, and quotations already snapshot the exact flight and price a
+booking would need to verify against.
 
 ## API
 
@@ -176,6 +291,15 @@ All endpoints live under `/api`. Amounts in and out are in cents.
 | `GET` | `/flights/:id` | job status plus its standardized offers |
 | `GET` | `/flights/:id/evidence` | screenshot of whatever stopped the automation |
 | `GET` | `/flights/requests/:id/searches` | search history for a request |
+| `GET` `PATCH` | `/settings` | agency settings (rounding, markup defaults, terms) |
+| `PUT` `DELETE` | `/settings/rates/:currency` | set or remove an exchange rate |
+| `GET` `POST` | `/quotes` | list quotations, or build one from flight offers |
+| `GET` `PATCH` | `/quotes/:id` | full internal record; change status, terms or notes |
+| `PATCH` | `/quotes/:id/items/:itemId` | change a line's markup or set its price by hand |
+| `POST` | `/quotes/:id/reprice` | re-base on today's rate and extend the expiry |
+| `POST` | `/quotes/:id/whatsapp` | generate the customer message and `wa.me` link |
+| `GET` | `/public/quotes/:token` | **customer-facing**; allow-listed fields only |
+| `POST` | `/public/quotes/:token/select` | customer confirms a flight; refused once expired |
 
 Filters worth knowing: `/payments?overdue=true` returns everything still pending
 past its due date, and `/bookings?q=` searches reference, supplier, destination,
@@ -211,6 +335,13 @@ palette, and follows the OS setting until the sidebar toggle overrides it.
 - **Searches run one at a time**, in the API process. That is deliberate (a
   browser is heavy, and hammering an airline is rude), but it means a queued
   search waits. A separate worker would be the next step.
+- **No authentication.** "Prepared by" is a dropdown, not a login, and any
+  visitor with the dashboard URL sees internal pricing. Customer quotation links
+  are unguessable random tokens, which is right for a share link but is not a
+  substitute for authenticating employees. Auth is the prerequisite for putting
+  this on a public host.
+- **The seeded exchange rates are placeholders, not market data.** Set real
+  rates under Settings before quoting; the screen flags any rate over a week old.
 - **Revenue is recognised when sold**, keyed on the booking's creation date, not
   when the client travels or when cash lands. The trend chart says "sold", and cash
   collected is tracked separately on its own tile.

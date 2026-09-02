@@ -9,19 +9,35 @@ import { BookingsPage } from './pages/Bookings';
 import { BookingDetailPage } from './pages/BookingDetail';
 import { PaymentsPage } from './pages/Payments';
 import { ClientsPage } from './pages/Clients';
+import { QuotesPage } from './pages/Quotes';
+import { SettingsPage } from './pages/Settings';
+import { CustomerQuotePage } from './pages/CustomerQuote';
 
 const PAGES = [
   { to: '/', label: 'Dashboard', title: 'Dashboard', sub: 'How the agency is trading right now' },
   { to: '/requests', label: 'Requests', title: 'Travel requests', sub: 'Enquiries from first contact to a won booking' },
   { to: '/bookings', label: 'Bookings', title: 'Bookings', sub: 'Confirmed travel, suppliers and margin' },
+  { to: '/quotes', label: 'Quotations', title: 'Quotations', sub: 'Pricing, markup and what the customer was sent' },
   { to: '/payments', label: 'Payments', title: 'Payments', sub: 'Deposits, balances and refunds' },
   { to: '/clients', label: 'Clients', title: 'Clients', sub: 'Everyone the agency books for' },
+  { to: '/settings', label: 'Settings', title: 'Agency settings', sub: 'Exchange rate, rounding, markup defaults and terms' },
 ] as const;
 
 const THEME_LABEL = { system: 'System', light: 'Light', dark: 'Dark' } as const;
 
 export function App() {
   const { pathname } = useLocation();
+
+  // The customer's copy of a quotation is a standalone page: no sidebar, no
+  // internal navigation, nothing that belongs to the agency's workspace.
+  if (pathname.startsWith('/q/')) {
+    return (
+      <Routes>
+        <Route path="/q/:token" element={<CustomerQuotePage />} />
+      </Routes>
+    );
+  }
+
   const { theme, cycle } = useTheme();
   // Nav badges track work waiting on someone, so they refresh with the route.
   const { data: overview } = useResource<Overview>(`/overview?months=6&at=${pathname}`);
@@ -80,8 +96,11 @@ export function App() {
             <Route path="/requests" element={<RequestsPage />} />
             <Route path="/bookings" element={<BookingsPage />} />
             <Route path="/bookings/:id" element={<BookingDetailPage />} />
+            <Route path="/quotes" element={<QuotesPage />} />
+            <Route path="/quotes/:id" element={<QuotesPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/clients" element={<ClientsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<p>That page does not exist.</p>} />
           </Routes>
         </main>

@@ -147,3 +147,50 @@ export function formatTimestamp(value: string | null): string {
   const date = parseSqlTimestamp(value);
   return date ? date.toLocaleString() : '—';
 }
+
+/** IQD is never shown with decimals. */
+export const formatIqd = (minorUnits: number) =>
+  `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(minorUnits / 100)} IQD`;
+
+/** The USD equivalent line that sits under every IQD price. */
+export const formatUsdApprox = (minorUnits: number) =>
+  `≈ $${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(minorUnits / 100)} USD`;
+
+/** Internal figures keep their cents, because margins live in the cents. */
+export const formatUsdExact = (minorUnits: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(minorUnits / 100);
+
+export const QUOTE_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  viewed: 'Viewed',
+  customer_selected: 'Customer selected',
+  awaiting_payment: 'Awaiting payment',
+  paid: 'Paid',
+  expired: 'Expired',
+  cancelled: 'Cancelled',
+};
+
+/** "8:00 PM, September 2, 2026" — the wording used on quotations. */
+export function formatExpiry(value: string): string {
+  const date = new Date(`${value.replace(' ', 'T')}Z`);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('en-US', {
+    hour: 'numeric', minute: '2-digit', day: 'numeric', month: 'long', year: 'numeric',
+  });
+}
+
+/** "in 6 hours" / "expired 2 hours ago", for the urgency line next to a quote. */
+export function expiryDistance(value: string): string {
+  const date = new Date(`${value.replace(' ', 'T')}Z`);
+  if (Number.isNaN(date.getTime())) return '';
+  const minutes = Math.round((date.getTime() - Date.now()) / 60_000);
+  const abs = Math.abs(minutes);
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+  const unit = abs < 60
+    ? plural(abs, 'minute')
+    : abs < 1440
+      ? plural(Math.round(abs / 60), 'hour')
+      : plural(Math.round(abs / 1440), 'day');
+  return minutes >= 0 ? `in ${unit}` : `${unit} ago`;
+}
