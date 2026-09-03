@@ -8,6 +8,7 @@ import {
   formatUsdApprox, formatUsdExact,
 } from '../lib/format';
 import type { BookingChannel, Order, OrderStatus } from '../lib/types';
+import { PaymentPanel } from '../components/PaymentPanel';
 import {
   Badge, Card, EmptyState, Field, Modal, Segmented, TableSkeleton,
   type Tone, useDebounced, useToast,
@@ -154,7 +155,6 @@ function OrderDetail({
   const channels = useResource<{ channels: BookingChannel[] }>('/orders/channels');
   const [busy, setBusy] = useState(false);
   const [verification, setVerification] = useState<Record<string, unknown> | null>(null);
-  const [showPayment, setShowPayment] = useState(false);
   const [showBooking, setShowBooking] = useState(false);
 
   const data = order.data;
@@ -326,14 +326,6 @@ function OrderDetail({
             <div className="quote-actions">
               <button
                 type="button"
-                className="btn btn-primary"
-                disabled={busy || data.payment_status === 'received' || data.status !== 'awaiting_payment'}
-                onClick={() => setShowPayment(true)}
-              >
-                Record payment
-              </button>
-              <button
-                type="button"
                 className="btn"
                 disabled={busy}
                 onClick={() => act('Fare re-checked', async () => {
@@ -366,6 +358,8 @@ function OrderDetail({
               </button>
             </div>
 
+            <PaymentPanel order={data} onChanged={() => { order.reload(); onChanged(); }} />
+
             {verification ? <VerificationPanel result={verification} /> : null}
 
             <ChannelNotice channels={channels.data?.channels ?? []} />
@@ -388,19 +382,6 @@ function OrderDetail({
                 </div>
               ))}
             </div>
-
-            {showPayment ? (
-              <PaymentDialog
-                order={data}
-                onClose={() => setShowPayment(false)}
-                onDone={() => {
-                  setShowPayment(false);
-                  toast('Payment recorded');
-                  order.reload();
-                  onChanged();
-                }}
-              />
-            ) : null}
 
             {showBooking ? (
               <BookingDialog
@@ -470,78 +451,6 @@ function ChannelNotice({ channels }: { channels: BookingChannel[] }) {
         flight-search automation is a shopping tool only.
       </p>
     </section>
-  );
-}
-
-function PaymentDialog({ order, onClose, onDone }: { order: Order; onClose: () => void; onDone: () => void }) {
-  const [method, setMethod] = useState('bank_transfer');
-  const [reference, setReference] = useState('');
-  const [note, setNote] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-
-  return (
-    <Modal
-      title={`Record payment for ${order.reference}`}
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={saving}
-            onClick={async () => {
-              setSaving(true);
-              setError(undefined);
-              try {
-                await api.post(`/orders/${order.id}/payment`, { method, reference, note });
-                onDone();
-              } catch (cause) {
-                setError(cause instanceof Error ? cause.message : 'Could not record the payment');
-              } finally {
-                setSaving(false);
-              }
-            }}
-          >
-            {saving ? 'Saving…' : 'Mark as paid'}
-          </button>
-        </>
-      }
-    >
-      <div className="modal-body">
-        {error ? <div className="alert alert-error">{error}</div> : null}
-        <div className="alert" style={{ borderColor: 'var(--border-strong)' }}>
-          No payment gateway is connected. This records that money arrived by another route —
-          a transfer, a cash deposit — so the order can move on. A gateway will later write
-          exactly this record automatically.
-        </div>
-        <p className="card-sub">
-          Amount due: <strong>{formatIqd(order.final_iqd_cents)}</strong>{' '}
-          ({formatUsdApprox(order.final_usd_cents)})
-        </p>
-        <div className="form-grid">
-          <Field label="Method">
-            {(id) => (
-              <select id={id} className="select" value={method} onChange={(e) => setMethod(e.target.value)}>
-                <option value="bank_transfer">Bank transfer</option>
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="other">Other</option>
-              </select>
-            )}
-          </Field>
-          <Field label="Reference" hint="Transfer or receipt number">
-            {(id) => (
-              <input id={id} className="input" value={reference} onChange={(e) => setReference(e.target.value)} />
-            )}
-          </Field>
-          <Field label="Note" full>
-            {(id) => <input id={id} className="input" value={note} onChange={(e) => setNote(e.target.value)} />}
-          </Field>
-        </div>
-      </div>
-    </Modal>
   );
 }
 

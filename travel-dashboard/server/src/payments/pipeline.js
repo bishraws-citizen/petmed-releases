@@ -74,6 +74,10 @@ export async function recheckAfterPayment(orderId, { adapter } = {}) {
  * arrived, and a failed check can never undo it.
  */
 export function onPaymentSucceeded(orderId, { adapter } = {}) {
+  // Some deployments would rather check the fare by hand, and the tests need a
+  // settlement that does not reach for a browser.
+  if (process.env.POST_PAYMENT_RECHECK === 'off') return Promise.resolve(null);
+
   return recheckAfterPayment(orderId, { adapter }).catch((error) => {
     console.error('post-payment re-check failed', error);
     return null;

@@ -435,6 +435,10 @@ export interface Order {
   booking_channel: string;
   booking_reference: string;
   ticket_numbers: string;
+  /** Result of the fare check that runs automatically once payment lands. */
+  recheck_verdict: string;
+  recheck_detail: string;
+  recheck_at: string | null;
   booked_at: string | null;
   failure_reason: string;
   customer_confirmed_at: string | null;

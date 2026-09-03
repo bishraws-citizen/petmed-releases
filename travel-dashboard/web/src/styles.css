@@ -990,3 +990,53 @@ table.data td.wrap { white-space: normal; min-width: 180px; }
 .channel-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .channel-list li { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .channel-list li strong { display: inline-flex; align-items: center; gap: 8px; }
+
+/* ---------- Customer payment instructions ---------- */
+
+.cq-pay {
+  margin-top: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.cq-pay-amount {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.cq-payref {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  margin: 2px 0 8px;
+}
+.cq-pay-instructions {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pay-card {
+  padding: 14px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pay-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pay-history { margin-top: 12px; }
+.pay-history summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); font-weight: 550; }
+.pay-history .attention-list { margin-top: 8px; }

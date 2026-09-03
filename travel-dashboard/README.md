@@ -18,6 +18,7 @@ into bookings, and track the money against each booking until it is settled.
 | **Quotations** | Apply markup to searched fares, price them in IQD with a USD equivalent, and send the customer a quotation they can confirm. Employees see cost, markup and profit; customers never do. |
 | **Orders** | A customer confirms a quotation and it becomes a booking request with its price locked. Employees see passengers, payment state, ticketing status and the full history. |
 | **Settings** | Exchange rates, IQD rounding, default markup and quote validity — all administrator-editable. |
+| **Payments** | Payment requests with instructions and a reference, signed provider webhooks, reconciliation against the locked price, and an automatic fare re-check once money lands. |
 
 ## Running it
 
@@ -55,6 +56,7 @@ server/          Express API over SQLite (node:sqlite), plain ESM — no build s
   src/messaging/     WhatsApp message builder (sending is a separate concern)
   src/orders/        confirmation, the order status machine, passenger profiles
   src/booking/       authorized booking channels, and the pre-ticketing re-check
+  src/payments/      providers, payment intents, signed webhooks, post-payment pipeline
   src/mock-airline/  a fictional airline site the tests drive
   src/seed.js        deterministic sample data
 web/             Vite + React + TypeScript
@@ -163,7 +165,7 @@ question for you and your legal advisers, not something the code can settle.
 
 ### Tests
 
-`npm test` runs 40 checks and is self-contained — it starts its own mock
+`npm test` runs 56 checks and is self-contained — it starts its own mock
 airline on an ephemeral port and creates its own fixtures, so it passes on a
 fresh checkout with nothing else running and no seeding. The flight-search suite drives a real browser against
 the mock airline (parser edge cases, airport resolution, one-way and return
@@ -173,7 +175,9 @@ IQD rounding modes, manual overrides, rate-change immutability, expiry, the
 customer-projection leak check, and transaction rollback on a bad fare. The
 order suite covers the price lock surviving a rate change and a reprice, expiry
 blocking confirmation, passenger snapshotting, every guard in the status
-machine, and automated booking channels refusing until connected.
+machine, and automated booking channels refusing until connected. The payment
+suite covers forged, tampered, stale, unsigned and unverifiable callbacks,
+replay deduplication, under- and overpayment, and settlement by hand.
 
 ## Pricing and quotations
 
@@ -336,6 +340,82 @@ something needing a human. It is advisory: the customer's locked price does not
 change either way, and a person decides whether to absorb the difference,
 re-quote, or proceed.
 
+## Payments
+
+Confirming an order raises a payment request automatically, so the customer
+sees the amount and a reference to quote without waiting for anyone.
+
+### No card data, ever
+
+This application does not collect card details and must not be extended to.
+Card providers are reached through their **own hosted checkout**, so card
+numbers never touch this server and it stays out of PCI scope. There is no card
+form anywhere in the codebase.
+
+### Providers
+
+| Provider | Works today | Settles by |
+| --- | --- | --- |
+| Bank transfer | yes | a consultant confirming the transfer |
+| Cash at the agency | yes | a consultant confirming receipt |
+| Card (hosted checkout) | no | signed webhook |
+| Mobile wallet / local rail | no | signed webhook |
+
+The two unbuilt providers declare their prerequisites and refuse to create a
+payment until integrated. A signing secret alone does **not** mark one
+connected — that only makes its callbacks verifiable, which is a different
+thing — so `connected` and `webhook_ready` are reported separately and the UI
+never offers a provider that would then refuse.
+
+### Detecting payment
+
+`POST /api/webhooks/payments/:provider` is the only route an outsider can call,
+so it is strict:
+
+- **Signature verified over the exact bytes received** (HMAC-SHA256,
+  timing-safe compare). The raw body is kept precisely because re-serialising a
+  parsed body would change it and break every signature.
+- **A missing signing secret is a refusal (503), never a skipped check.**
+- **Stale timestamps rejected** (default 5 minutes) so a captured request cannot
+  be replayed later.
+- **Each provider event id is recorded once**, so a provider's own retries are
+  harmless. Rejected attempts are logged under a synthetic id so a bad request
+  cannot burn the id of a legitimate event that follows.
+- **The amount is reconciled against what the order locked.** A caller only ever
+  says what was *paid*; what is *owed* comes from the order. A short payment is
+  recorded as underpaid and does **not** mark the order paid, because a partly
+  paid ticket is not a paid ticket. An overpayment settles and reports the
+  excess.
+
+Recording a payment by hand goes through the same settlement path, so
+reconciliation and everything downstream behave identically. That is deliberate:
+it is the seam a gateway webhook replaces.
+
+### After payment
+
+```
+payment received -> order paid -> fare re-checked automatically
+                 -> staged for an authorized booking channel
+```
+
+The re-check runs at the moment it matters — the agency is now holding the
+customer's money against a fare it has not looked at since the quotation. It
+runs *outside* settlement so a slow airline lookup cannot hold up recording that
+money arrived, and a failed check can never undo it. Its verdict is advisory:
+the customer's price was locked at confirmation and does not move. It books
+nothing. Set `POST_PAYMENT_RECHECK=off` to check fares by hand instead.
+
+### Configuration
+
+```
+CARD_WEBHOOK_SECRET=...      # required before card callbacks are accepted
+WALLET_WEBHOOK_SECRET=...    # same, for the wallet rail
+WEBHOOK_TOLERANCE_SECONDS=300
+PAYMENT_PROVIDER=bank_transfer
+BANK_NAME= BANK_ACCOUNT= BANK_IBAN= BANK_SWIFT=   # shown in transfer instructions
+POST_PAYMENT_RECHECK=off     # disable the automatic fare check
+```
+
 ## The wider pipeline
 
 This module is stage four of a longer workflow. Stages already built are marked:
@@ -351,18 +431,21 @@ Customer sends request                      [built]
   -> customer selects flight                [built]
   -> customer confirms + passengers         [built]
   -> price locked, order created            [built]
-  -> customer pays                          (not built - no gateway)
-  -> system detects payment                 (manual today; the seam is built)
-  -> availability and price re-checked      [built - advisory]
+  -> customer pays                          [built - instructions + reference]
+  -> system detects payment                 [built - signed webhook, or by hand]
+  -> availability and price re-checked      [built - automatic, advisory]
   -> booking on an authorized channel       (channel abstraction built; GDS/NDC not connected)
   -> PNR / ticket recorded                  [built - recorded by staff]
   -> confirmation sent to customer          (not built)
 ```
 
-What is deliberately absent is payment processing and automatic ticket purchase.
-Everything they need already exists: the statuses, the guarded transitions, the
-event trail, the locked price, the re-check step, and a booking-channel
-interface with GDS and NDC declared but not connected.
+What remains deliberately absent is a connected payment gateway and automatic
+ticket purchase. The machinery around both exists: the statuses, the guarded
+transitions, the event trail, the locked price, reconciliation, the automatic
+re-check, and a booking-channel interface with GDS and NDC declared but not
+connected. Connecting a gateway means implementing one provider's
+`createIntent` and pointing its webhook at the endpoint that already verifies,
+deduplicates and reconciles.
 
 ## API
 
@@ -426,6 +509,9 @@ palette, and follows the OS setting until the sidebar toggle overrides it.
 
 - **Single currency.** Everything is USD; there is no FX handling. Multi-currency
   would need a rate per booking and a reporting currency for the dashboard totals.
+- **No payment gateway is connected.** Bank transfer and cash work today and are
+  reconciled by a person. The webhook endpoint is built and tested but nothing
+  signs callbacks to it yet.
 - **No authentication.** Every visitor is implicitly the same agency user. Real
   deployment needs auth and per-consultant ownership before it faces the internet.
 - **One airline, and its selectors are unverified.** See the warning above: the
@@ -436,6 +522,9 @@ palette, and follows the OS setting until the sidebar toggle overrides it.
 - **Ticketing is not automated, by design.** GDS and NDC are declared channels
   but not connected; a consultant issues the ticket and records the PNR. Whether
   an agency may issue on a given carrier depends on its own ticketing authority.
+- **No payment gateway is connected.** Bank transfer and cash work today and are
+  reconciled by a person. The webhook endpoint is built and tested but nothing
+  signs callbacks to it yet.
 - **No authentication.** "Prepared by" is a dropdown, not a login, and any
   visitor with the dashboard URL sees internal pricing. Customer quotation links
   are unguessable random tokens, which is right for a share link but is not a

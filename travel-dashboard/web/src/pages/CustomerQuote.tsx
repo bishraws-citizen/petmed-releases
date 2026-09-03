@@ -7,9 +7,9 @@ import {
   formatStops, formatUsdApprox, summarisePassengers,
 } from '../lib/format';
 import type {
-  CustomerOrder, CustomerQuote, PassengerInput, PassengerType, SavedPassenger,
+  CustomerOrder, CustomerPayment, CustomerQuote, PassengerInput, PassengerType, SavedPassenger,
 } from '../lib/types';
-import { Skeleton } from '../components/ui';
+import { Skeleton, useToast } from '../components/ui';
 import { PassengerFields, emptyPassenger } from '../components/PassengerForm';
 
 type Step = 'choose' | 'passengers' | 'review' | 'done';
@@ -410,6 +410,8 @@ export function CustomerQuotePage() {
                 <dd>Awaiting payment</dd>
               </div>
             </dl>
+
+            {order.payment ? <PaymentInstructions payment={order.payment} /> : null}
           </section>
         ) : null}
 
@@ -455,5 +457,61 @@ function FlightLines({ option }: { option: CustomerQuote['options'][number] }) {
       </div>
       {option.baggage ? <div className="cq-baggage">Baggage: {option.baggage}</div> : null}
     </div>
+  );
+}
+
+/**
+ * How to pay, shown the moment the customer confirms.
+ *
+ * The amount here is the one locked at confirmation — the same figure the order
+ * carries — so what they are asked to transfer can never drift from what they
+ * agreed to.
+ */
+function PaymentInstructions({ payment }: { payment: CustomerPayment }) {
+  const toast = useToast();
+
+  return (
+    <section className="cq-pay">
+      <h2 className="cq-section-title">How to pay</h2>
+
+      <div className="cq-pay-amount">
+        <div>
+          <span className="cq-label">Amount due</span>
+          <div className="cq-iqd">{formatIqd(payment.amount_iqd_cents)}</div>
+          <div className="cq-usd">{formatUsdApprox(payment.amount_usd_cents)}</div>
+        </div>
+        <div>
+          <span className="cq-label">Payment reference</span>
+          <div className="cq-payref">{payment.reference}</div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              navigator.clipboard?.writeText(payment.reference)
+                .then(() => toast('Reference copied'))
+                .catch(() => toast('Could not copy — select the text instead', 'error'));
+            }}
+          >
+            Copy reference
+          </button>
+        </div>
+      </div>
+
+      {payment.checkout_url ? (
+        <a className="cq-confirm" href={payment.checkout_url} target="_blank" rel="noreferrer noopener">
+          Pay now
+        </a>
+      ) : null}
+
+      {payment.instructions ? (
+        <pre className="cq-pay-instructions">{payment.instructions}</pre>
+      ) : null}
+
+      {payment.expires_at ? (
+        <p className="field-hint">
+          Please pay by {formatExpiry(payment.expires_at)} so we can hold this fare for you.
+        </p>
+      ) : null}
+    </section>
   );
 }
