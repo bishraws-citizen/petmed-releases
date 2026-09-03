@@ -1,23 +1,29 @@
 import { Router } from 'express';
 
-import { all } from '../db.js';
 import { badRequest, field } from '../validate.js';
 import {
   DEFAULTS, deleteRate, readRates, readSettings, upsertRate, writeSettings,
 } from '../pricing/settings.js';
+import { requireRole } from '../auth/middleware.js';
 
 export const settings = Router();
+
+/**
+ * Any signed-in employee may read the configuration — they need the exchange
+ * rate and the markup defaults to build a quotation. Only an administrator may
+ * change it, because these values price every future quotation.
+ */
+const adminOnly = requireRole('admin');
 
 settings.get('/', (_req, res) => {
   res.json({
     settings: readSettings(),
     rates: readRates(),
-    employees: all('SELECT * FROM employees WHERE active = 1 ORDER BY name'),
     defaults: DEFAULTS,
   });
 });
 
-settings.patch('/', (req, res) => {
+settings.patch('/', adminOnly, (req, res) => {
   const body = req.body ?? {};
   const patch = {};
 
@@ -57,7 +63,7 @@ settings.patch('/', (req, res) => {
  * Changing it here affects new quotations only — existing ones carry their own
  * rate and are unaffected by anything set on this screen.
  */
-settings.put('/rates/:currency', (req, res) => {
+settings.put('/rates/:currency', adminOnly, (req, res) => {
   const currency = String(req.params.currency ?? '').toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) throw badRequest('Currency must be a three-letter code');
   if (currency === 'USD') throw badRequest('USD is the base currency and is always 1');
@@ -71,7 +77,7 @@ settings.put('/rates/:currency', (req, res) => {
   res.json({ rate: upsertRate(currency, value, updatedBy), rates: readRates() });
 });
 
-settings.delete('/rates/:currency', (req, res) => {
+settings.delete('/rates/:currency', adminOnly, (req, res) => {
   const currency = String(req.params.currency ?? '').toUpperCase();
   if (currency === 'USD' || currency === 'IQD') {
     throw badRequest(`${currency} is required by the pricing engine and cannot be removed`);

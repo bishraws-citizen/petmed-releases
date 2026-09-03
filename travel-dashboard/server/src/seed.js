@@ -1,4 +1,6 @@
-import { db, run, DB_PATH } from './db.js';
+import { db, one, run, DB_PATH } from './db.js';
+import { ensureBaseline } from './pricing/settings.js';
+import { generatePassword, hashPassword } from './auth/passwords.js';
 
 /** Small deterministic PRNG so every seeded database looks the same. */
 function makeRandom(seed) {
@@ -75,14 +77,27 @@ const NOTES = [
 
 function reset() {
   db.exec('PRAGMA foreign_keys = OFF');
-  db.exec(`DELETE FROM flight_offers; DELETE FROM flight_searches;
-           DELETE FROM payments; DELETE FROM bookings; DELETE FROM requests; DELETE FROM clients;`);
-  db.exec(`DELETE FROM sqlite_sequence
-           WHERE name IN ('flight_offers','flight_searches','payments','bookings','requests','clients')`);
+  /*
+   * Foreign keys are off for the wipe, so ON DELETE CASCADE does not fire and
+   * every dependent table has to be named. Missing one leaves orphaned rows
+   * pointing at deleted clients, which then accumulate on every reseed.
+   */
+  const TABLES = [
+    'payment_events', 'payment_intents',
+    'order_events', 'order_passengers', 'orders',
+    'quote_items', 'quotes',
+    'flight_offers', 'flight_searches',
+    'payments', 'bookings', 'requests',
+    'passengers', 'clients',
+  ];
+  for (const table of TABLES) db.exec(`DELETE FROM ${table}`);
+  db.exec(
+    `DELETE FROM sqlite_sequence WHERE name IN (${TABLES.map((t) => `'${t}'`).join(', ')})`,
+  );
   db.exec('PRAGMA foreign_keys = ON');
 }
 
-function seed() {
+async function seed() {
   reset();
 
   const clientIds = CLIENTS.map(([name, email, phone, company], index) => {
@@ -258,6 +273,8 @@ function seed() {
     }
   }
 
+  const credentials = await seedSignIns();
+
   const counts = db
     .prepare(`SELECT
         (SELECT COUNT(*) FROM clients)  AS clients,
@@ -268,6 +285,37 @@ function seed() {
 
   console.log(`Seeded ${DB_PATH}`);
   console.table(counts);
+
+  if (credentials.length) {
+    console.log('\nSign-in details (shown once — they are not stored anywhere in plain text):');
+    console.table(credentials);
+    console.log('Set ADMIN_PASSWORD before seeding to choose the administrator password yourself.\n');
+  }
 }
 
-seed();
+/**
+ * Gives the seeded staff usable passwords.
+ *
+ * The administrator password comes from ADMIN_PASSWORD when set; otherwise one
+ * is generated and printed once. Nothing is hard-coded, so a deployment can
+ * never ship with a password that is public knowledge.
+ */
+async function seedSignIns() {
+  ensureBaseline();
+
+  const rows = [];
+  for (const employee of db.prepare('SELECT id, name, email, role FROM employees').all()) {
+    const password = employee.role === 'admin'
+      ? process.env.ADMIN_PASSWORD || generatePassword()
+      : generatePassword();
+
+    run('UPDATE employees SET password_hash = :hash WHERE id = :id', {
+      id: employee.id, hash: await hashPassword(password),
+    });
+    rows.push({ email: employee.email, role: employee.role, password });
+  }
+  db.exec('DELETE FROM sessions');
+  return rows;
+}
+
+await seed();

@@ -51,7 +51,7 @@ pay.post('/orders/:id/intents', guard((req, res) => {
   res.status(201).json(createIntent(orderId, {
     provider: field(body, 'provider', { type: 'string', required: false, fallback: undefined, max: 40 }),
     validityHours: body.validity_hours ? Number(body.validity_hours) : undefined,
-    actorName: field(body, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 }),
+    actorName: req.user?.name ?? '',
   }));
 }));
 
@@ -65,7 +65,7 @@ pay.post('/intents/:id/cancel', guard((req, res) => {
   const id = intParam(req.params.id, 'payment request');
   res.json(cancelIntent(id, {
     reason: field(req.body ?? {}, 'reason', { type: 'string', required: false, fallback: '', max: 300 }),
-    actorName: field(req.body ?? {}, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 }),
+    actorName: req.user?.name ?? '',
   }));
 }));
 
@@ -87,7 +87,7 @@ pay.post('/intents/:id/settle', guard((req, res) => {
   const settlement = settleIntent(id, {
     paidAmountIqdCents: amount,
     providerReference: field(body, 'reference', { type: 'string', required: false, fallback: '', max: 80 }),
-    settledBy: field(body, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 }),
+    settledBy: req.user?.name ?? '',
     note: field(body, 'note', { type: 'string', required: false, fallback: '', max: 500 }),
     actor: 'employee',
   });
@@ -106,7 +106,7 @@ pay.post('/orders/:id/manual', guard((req, res) => {
     method: field(body, 'method', { type: 'string', required: false, fallback: 'bank_transfer', max: 40 }),
     reference: field(body, 'reference', { type: 'string', required: false, fallback: '', max: 80 }),
     note: field(body, 'note', { type: 'string', required: false, fallback: '', max: 500 }),
-    actorName: field(body, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 }),
+    actorName: req.user?.name ?? '',
   });
   if (!settlement.underpaid) onPaymentSucceeded(orderId, { adapter: body.adapter });
   res.json(settlement);

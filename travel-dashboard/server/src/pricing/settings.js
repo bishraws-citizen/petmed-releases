@@ -103,6 +103,8 @@ export function ensureBaseline() {
       ['Omar Haddad', 'omar@voyager.example', 'consultant'],
       ['Sara Kadhim', 'sara@voyager.example', 'consultant'],
     ]) {
+      // Created without a password: an account with no password cannot sign
+      // in, so this never quietly ships a working default login.
       run('INSERT INTO employees (name, email, role) VALUES (:name, :email, :role)', { name, email, role });
     }
   }

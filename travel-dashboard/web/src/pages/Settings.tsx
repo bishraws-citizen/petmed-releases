@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react';
 
 import { api, useResource } from '../lib/api';
 import { formatTimestamp } from '../lib/format';
-import type { AgencySettings, Employee, ExchangeRate } from '../lib/types';
+import type { AgencySettings, ExchangeRate } from '../lib/types';
 import { Card, CardHead, Field, useToast } from '../components/ui';
 
 interface SettingsPayload {
   settings: AgencySettings;
   rates: ExchangeRate[];
-  employees: Employee[];
 }
 
 /** Rates drift; a stale one quietly mis-prices every new quotation. */

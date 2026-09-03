@@ -14,6 +14,8 @@ import { settings } from './routes/settings.js';
 import { publicQuotes } from './routes/public.js';
 import { orders } from './routes/orders.js';
 import { pay, paymentWebhook } from './routes/pay.js';
+import { auth } from './routes/auth.js';
+import { attachUser, requireAuth } from './auth/middleware.js';
 import { ensureBaseline } from './pricing/settings.js';
 import { mockAirline } from './mock-airline/index.js';
 import { HttpError } from './validate.js';
@@ -32,19 +34,38 @@ app.use(express.json({
 }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
-app.use('/api/overview', overview);
-app.use('/api/clients', clients);
-app.use('/api/requests', requests);
-app.use('/api/bookings', bookings);
-app.use('/api/payments', payments);
-app.use('/api/flights', flights);
-app.use('/api/quotes', quotes);
-app.use('/api/settings', settings);
-app.use('/api/orders', orders);
-app.use('/api/pay', pay);
-app.use('/api/webhooks/payments', paymentWebhook);
-// Customer-facing, addressed by token; never exposes internal pricing.
+
+// Resolves the signed-in employee for every request. It never rejects — the
+// routes below decide what actually needs a session.
+app.use(attachUser);
+
+/*
+ * Three surfaces, three rules:
+ *
+ *  1. Customer routes are addressed by an unguessable quotation token and must
+ *     stay reachable without a sign-in — the customer has no account.
+ *  2. The payment webhook authenticates with a signature over its raw body, so
+ *     a session cookie would be meaningless there.
+ *  3. Everything else is agency-internal — costs, margins, passport details —
+ *     and requires a signed-in employee.
+ */
 app.use('/api/public', publicQuotes);
+app.use('/api/webhooks/payments', paymentWebhook);
+app.use('/api/auth', auth);
+
+app.use('/api/overview', requireAuth, overview);
+app.use('/api/clients', requireAuth, clients);
+app.use('/api/requests', requireAuth, requests);
+app.use('/api/bookings', requireAuth, bookings);
+app.use('/api/payments', requireAuth, payments);
+app.use('/api/flights', requireAuth, flights);
+app.use('/api/quotes', requireAuth, quotes);
+app.use('/api/orders', requireAuth, orders);
+app.use('/api/pay', requireAuth, pay);
+
+// Readable by any signed-in employee (they need the rate to quote); the
+// routes that change it are admin-only from inside.
+app.use('/api/settings', requireAuth, settings);
 
 // A local stand-in airline used to test the automation end to end. It is a
 // test fixture, so it is not served in production.

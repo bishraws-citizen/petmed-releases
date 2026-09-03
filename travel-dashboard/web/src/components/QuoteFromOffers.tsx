@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { api, useResource } from '../lib/api';
 import { formatDuration, formatFare, formatIqd, formatStops, formatUsdApprox } from '../lib/format';
 import type {
-  AgencySettings, Employee, ExchangeRate, FlightSearch, MarkupType, Quote, TravelRequest,
+  AgencySettings, ExchangeRate, FlightSearch, MarkupType, Quote, TravelRequest,
 } from '../lib/types';
 import { Field, Modal, useToast } from './ui';
 
@@ -124,15 +124,14 @@ function QuoteBuilder({
   onCreated: () => void;
 }) {
   const toast = useToast();
-  const config = useResource<{
-    settings: AgencySettings; rates: ExchangeRate[]; employees: Employee[];
-  }>('/settings');
+  // Rates come from settings, which only administrators may read, so the
+  // preview falls back to a plain create when a consultant is signed in.
+  const config = useResource<{ settings: AgencySettings; rates: ExchangeRate[] }>('/settings');
 
   const [markupType, setMarkupType] = useState<MarkupType | ''>('');
   const [markupValue, setMarkupValue] = useState('');
   const [markupCurrency, setMarkupCurrency] = useState<'USD' | 'IQD'>('USD');
   const [validity, setValidity] = useState('');
-  const [employeeId, setEmployeeId] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -183,7 +182,6 @@ function QuoteBuilder({
       const quote = await api.post<Quote>('/quotes', {
         client_id: request.client_id,
         request_id: request.id,
-        employee_id: employeeId ? Number(employeeId) : undefined,
         offer_ids: offerIds,
         markup: { type: effectiveType, value: effectiveValue, currency: markupCurrency },
         validity_hours: validity ? Number(validity) : undefined,
@@ -318,18 +316,6 @@ function QuoteBuilder({
                 value={validity}
                 onChange={(event) => setValidity(event.target.value)}
               />
-            )}
-          </Field>
-
-          <Field label="Prepared by">
-            {(id) => (
-              <select id={id} className="select" value={employeeId}
-                onChange={(event) => setEmployeeId(event.target.value)}>
-                <option value="">Not recorded</option>
-                {(config.data?.employees ?? []).map((employee) => (
-                  <option key={employee.id} value={employee.id}>{employee.name}</option>
-                ))}
-              </select>
             )}
           </Field>
 

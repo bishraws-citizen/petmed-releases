@@ -13,6 +13,8 @@ import { QuotesPage } from './pages/Quotes';
 import { OrdersPage } from './pages/Orders';
 import { SettingsPage } from './pages/Settings';
 import { CustomerQuotePage } from './pages/CustomerQuote';
+import { SignInPage } from './pages/SignIn';
+import { useAuth } from './lib/auth';
 
 const PAGES = [
   { to: '/', label: 'Dashboard', title: 'Dashboard', sub: 'How the agency is trading right now' },
@@ -22,16 +24,24 @@ const PAGES = [
   { to: '/orders', label: 'Orders', title: 'Booking requests', sub: 'Confirmed customers, locked prices and ticketing' },
   { to: '/payments', label: 'Payments', title: 'Payments', sub: 'Deposits, balances and refunds' },
   { to: '/clients', label: 'Clients', title: 'Clients', sub: 'Everyone the agency books for' },
-  { to: '/settings', label: 'Settings', title: 'Agency settings', sub: 'Exchange rate, rounding, markup defaults and terms' },
+  { to: '/settings', label: 'Settings', title: 'Agency settings', sub: 'Exchange rate, rounding, markup defaults and terms', role: 'admin' },
 ] as const;
 
 const THEME_LABEL = { system: 'System', light: 'Light', dark: 'Dark' } as const;
 
+/**
+ * Decides which of the three surfaces the visitor gets. It deliberately holds
+ * no data hooks of its own: the workspace below owns those, so signing in or
+ * out swaps whole components rather than changing the hooks a single component
+ * calls between renders.
+ */
 export function App() {
   const { pathname } = useLocation();
+  const { user, loading } = useAuth();
 
   // The customer's copy of a quotation is a standalone page: no sidebar, no
-  // internal navigation, nothing that belongs to the agency's workspace.
+  // internal navigation, nothing that belongs to the agency's workspace. It is
+  // checked before the session, because customers have no account.
   if (pathname.startsWith('/q/')) {
     return (
       <Routes>
@@ -40,6 +50,20 @@ export function App() {
     );
   }
 
+  if (loading) {
+    return <div className="signin-page"><p className="card-sub">Checking your session…</p></div>;
+  }
+
+  // Everything past here is agency-internal.
+  if (!user) return <SignInPage />;
+
+  return <Workspace />;
+}
+
+/** The signed-in agency workspace. */
+function Workspace() {
+  const { pathname } = useLocation();
+  const { user, signOut, atLeast } = useAuth();
   const { theme, cycle } = useTheme();
   // Nav badges track work waiting on someone, so they refresh with the route.
   const { data: overview } = useResource<Overview>(`/overview?months=6&at=${pathname}`);
@@ -65,7 +89,7 @@ export function App() {
         </div>
 
         <span className="nav-label">Workspace</span>
-        {PAGES.map((page) => (
+        {PAGES.filter((page) => !('role' in page) || atLeast(page.role)).map((page) => (
           <NavLink
             key={page.to}
             to={page.to}
@@ -78,8 +102,15 @@ export function App() {
         ))}
 
         <div className="sidebar-footer">
+          <div className="signed-in">
+            <div className="signed-in-name">{user?.name}</div>
+            <div className="sub">{user?.role}</div>
+          </div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={cycle} style={{ width: '100%' }}>
             Theme: {THEME_LABEL[theme]}
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={signOut} style={{ width: '100%' }}>
+            Sign out
           </button>
         </div>
       </nav>
@@ -104,7 +135,12 @@ export function App() {
             <Route path="/orders/:id" element={<OrdersPage />} />
             <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/clients" element={<ClientsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/settings"
+              element={atLeast('admin')
+                ? <SettingsPage />
+                : <p>Agency settings need administrator access.</p>}
+            />
             <Route path="*" element={<p>That page does not exist.</p>} />
           </Routes>
         </main>

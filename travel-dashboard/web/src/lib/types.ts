@@ -540,3 +540,12 @@ export interface CustomerPayment {
   checkout_url: string;
   expires_at: string | null;
 }
+
+export type Role = 'consultant' | 'manager' | 'admin';
+
+export interface SignedInUser {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+}

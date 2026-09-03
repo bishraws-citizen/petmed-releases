@@ -6,9 +6,21 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Called when the server says the session is gone, so a session that lapses
+ * mid-shift returns the employee to the sign-in screen instead of leaving them
+ * clicking through screens that quietly fail.
+ */
+let onSessionLost: (() => void) | null = null;
+export const setSessionLostHandler = (handler: (() => void) | null) => {
+  onSessionLost = handler;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
+    // The session lives in an httpOnly cookie, so it has to ride along.
+    credentials: 'same-origin',
     headers: { 'content-type': 'application/json', ...init?.headers },
   });
 
@@ -18,6 +30,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
+    // A failed sign-in is not a lost session — it is someone mistyping.
+    if (response.status === 401 && !path.startsWith('/auth/')) onSessionLost?.();
     throw new ApiError(payload?.error ?? `Request failed (${response.status})`, response.status);
   }
   return payload as T;

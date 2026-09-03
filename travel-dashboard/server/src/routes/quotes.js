@@ -44,7 +44,9 @@ quotes.post('/', (req, res) => {
   }
 
   const requestId = body.request_id ? field(body, 'request_id', { type: 'int', min: 1 }) : null;
-  const employeeId = body.employee_id ? field(body, 'employee_id', { type: 'int', min: 1 }) : null;
+  // Attributed to whoever is signed in — a consultant cannot file a quotation
+  // under someone else's name.
+  const employeeId = req.user?.id ?? null;
 
   const markup = body.markup
     ? {

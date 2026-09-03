@@ -21,6 +21,41 @@ into bookings, and track the money against each booking until it is settled.
 | **Payments** | Payment requests with instructions and a reference, signed provider webhooks, reconciliation against the locked price, and an automatic fare re-check once money lands. |
 | **Confirmation** | Once a ticket is issued the customer's link becomes their confirmation: PNR, ticket numbers, passengers and what they paid, printable. |
 
+## Signing in
+
+The workspace holds customer passport details and the agency's own pricing, so
+it is behind a sign-in. There are three surfaces with three different rules:
+
+| Surface | Access |
+| --- | --- |
+| Agency workspace (`/`, `/quotes`, `/orders`, …) | signed-in employee |
+| Agency settings and exchange rates | administrator |
+| Customer quotation (`/q/<token>`) | the unguessable token, no account |
+| Payment webhook | its own signature, no session |
+
+Seeding prints one-time passwords for the sample staff. **No password is
+hard-coded** — an account created without one simply cannot sign in — and you
+can choose the administrator's with `ADMIN_PASSWORD` before seeding.
+
+Details worth knowing:
+
+- Passwords use **scrypt** from the standard library with a per-account salt, so
+  two people with the same password get different hashes. Verification fails
+  closed on anything malformed.
+- **Sessions are stored server-side**, not encoded into a token, so signing out
+  — or deactivating an account — ends access on the very next request rather
+  than leaving a valid token in the wild. Expiry rolls while someone is working
+  and lapses when they stop (`SESSION_HOURS`, default 12).
+- The cookie is **httpOnly** and **SameSite=Lax**, which is the practical CSRF
+  defence for a JSON API; it is also `Secure` in production.
+- Sign-in failures are **deliberately identical** whether the address exists or
+  not, so the form cannot be used to discover who has an account, and repeated
+  attempts from one source are throttled.
+- Actions are attributed to **the signed-in employee**, not to a name the client
+  sends, so a consultant cannot file work under someone else's name.
+- Reading agency configuration is open to any employee — they need the exchange
+  rate to quote — while **changing** it is administrator-only.
+
 ## Running it
 
 Requires **Node 22.5+** (the API uses the built-in `node:sqlite` module, so there
@@ -28,7 +63,7 @@ is no native database dependency to compile).
 
 ```bash
 npm install
-npm run seed     # creates server/data/agency.db with ~6 months of sample data
+npm run seed     # sample data, and one-time sign-in passwords printed once
 npm run dev      # API on :4000, Vite dev server on :5173
 ```
 
@@ -166,7 +201,7 @@ question for you and your legal advisers, not something the code can settle.
 
 ### Tests
 
-`npm test` runs 63 checks and is self-contained — it starts its own mock
+`npm test` runs 74 checks and is self-contained — it starts its own mock
 airline on an ephemeral port and creates its own fixtures, so it passes on a
 fresh checkout with nothing else running and no seeding. The flight-search suite drives a real browser against
 the mock airline (parser edge cases, airport resolution, one-way and return
@@ -180,7 +215,10 @@ machine, and automated booking channels refusing until connected. The payment
 suite covers forged, tampered, stale, unsigned and unverifiable callbacks,
 replay deduplication, under- and overpayment, and settlement by hand. The
 confirmation suite covers the ticket projection, the leak check on the message,
-gating on `booked`, and re-send accounting.
+gating on `booked`, and re-send accounting. The auth suite covers salting,
+malformed hashes failing closed, anonymous callers being refused, immediate
+revocation on sign-out and deactivation, expiry, role gating, and the cookie
+flags.
 
 ## Pricing and quotations
 
@@ -550,11 +588,11 @@ palette, and follows the OS setting until the sidebar toggle overrides it.
 - **No payment gateway is connected.** Bank transfer and cash work today and are
   reconciled by a person. The webhook endpoint is built and tested but nothing
   signs callbacks to it yet.
-- **No authentication.** "Prepared by" is a dropdown, not a login, and any
-  visitor with the dashboard URL sees internal pricing. Customer quotation links
-  are unguessable random tokens, which is right for a share link but is not a
-  substitute for authenticating employees. Auth is the prerequisite for putting
-  this on a public host.
+- **Sign-in is basic by design.** There is no multi-factor, no password reset
+  by email, and no audit of who read what — only of who changed what. The login
+  throttle is per-process and in-memory, so several instances behind a load
+  balancer would each get their own allowance; put a real rate limiter in front
+  before exposing this publicly.
 - **The seeded exchange rates are placeholders, not market data.** Set real
   rates under Settings before quoting; the screen flags any rate over a week old.
 - **Revenue is recognised when sold**, keyed on the booking's creation date, not

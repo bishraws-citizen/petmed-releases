@@ -52,7 +52,7 @@ orders.post('/:id/status', guard((req, res) => {
   const id = intParam(req.params.id, 'order');
   const status = field(req.body ?? {}, 'status', { type: 'enum', values: ORDER_STATUSES });
   const note = field(req.body ?? {}, 'note', { type: 'string', required: false, fallback: '', max: 500 });
-  const actorName = field(req.body ?? {}, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 });
+  const actorName = req.user?.name ?? '';
 
   if (status === 'paid') {
     throw badRequest('Use the record-payment action so the payment details are captured.');
@@ -71,7 +71,7 @@ orders.post('/:id/payment', guard((req, res) => {
     method: field(body, 'method', { type: 'string', required: false, fallback: '', max: 40 }),
     reference: field(body, 'reference', { type: 'string', required: false, fallback: '', max: 80 }),
     note: field(body, 'note', { type: 'string', required: false, fallback: '', max: 500 }),
-    actorName: field(body, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 }),
+    actorName: req.user?.name ?? '',
   }));
 }));
 
@@ -116,7 +116,7 @@ orders.post('/:id/booking', guard((req, res) => {
     channel: field(body, 'channel', { type: 'string', required: false, fallback: '', max: 40 }),
     bookingReference: field(body, 'booking_reference', { type: 'string', max: 40 }),
     ticketNumbers: field(body, 'ticket_numbers', { type: 'string', required: false, fallback: '', max: 200 }),
-    actorName: field(body, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 }),
+    actorName: req.user?.name ?? '',
   }));
 }));
 
@@ -155,10 +155,7 @@ orders.post('/:id/confirmation', guard((req, res) => {
   const url = publicUrl(req, order.public_token);
   const message = buildConfirmationMessage(customerOrderView(order), url);
 
-  const updated = markConfirmationSent(id, {
-    channel,
-    actorName: field(req.body ?? {}, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 }),
-  });
+  const updated = markConfirmationSent(id, { channel, actorName: req.user?.name ?? '' });
 
   res.json({
     message,

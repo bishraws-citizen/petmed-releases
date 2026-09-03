@@ -541,6 +541,29 @@ addMissingColumns('orders', {
   confirmation_count: 'INTEGER NOT NULL DEFAULT 0',
 });
 
+/**
+ * Sign-in. Sessions are stored server-side rather than encoded into a token so
+ * that signing someone out actually ends their access immediately.
+ */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    token       TEXT PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at  TEXT NOT NULL,
+    user_agent  TEXT NOT NULL DEFAULT ''
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_sessions_employee ON sessions(employee_id);
+`);
+
+addMissingColumns('employees', {
+  // Empty until a password is set; an account with no password cannot sign in.
+  password_hash: "TEXT NOT NULL DEFAULT ''",
+  last_login_at: 'TEXT',
+});
+
 /** Next reference in a per-entity series, e.g. REQ-0007. */
 export function nextReference(prefix, table) {
   const row = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get();

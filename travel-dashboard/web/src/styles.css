@@ -1068,3 +1068,30 @@ table.data td.wrap { white-space: normal; min-width: 180px; }
 }
 .cq-ticket-flight { padding: 16px; border-bottom: 1px solid var(--border); }
 .cq-summary dd > div + div { margin-top: 2px; }
+
+/* ---------- Sign in ---------- */
+
+.signin-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--surface-sunken);
+}
+.signin-card {
+  width: min(400px, 100%);
+  padding: 28px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.signin-title { font-size: 22px; letter-spacing: -0.02em; }
+
+.signed-in {
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.signed-in-name { font-weight: 600; font-size: 13px; }
+.signed-in .sub { text-transform: capitalize; }
