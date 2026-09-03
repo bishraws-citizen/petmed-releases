@@ -1040,3 +1040,31 @@ table.data td.wrap { white-space: normal; min-width: 180px; }
 .pay-history { margin-top: 12px; }
 .pay-history summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); font-weight: 550; }
 .pay-history .attention-list { margin-top: 8px; }
+
+/* ---------- Customer ticket confirmation ---------- */
+
+.cq-ticket {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.cq-ticket-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px;
+  background: color-mix(in srgb, var(--status-good) 10%, transparent);
+  border-bottom: 1px solid var(--border);
+}
+.cq-pnr {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+.cq-ticket-flight { padding: 16px; border-bottom: 1px solid var(--border); }
+.cq-summary dd > div + div { margin-top: 2px; }

@@ -3,9 +3,12 @@ import { Router } from 'express';
 import { one } from '../db.js';
 import { badRequest, field, intParam, notFound } from '../validate.js';
 import {
-  ORDER_STATUSES, OrderError, canTransition, listOrders, listPassengerProfiles,
-  loadOrder, recordBooking, recordPayment, transition,
+  ORDER_STATUSES, OrderError, canTransition, customerOrderView, listOrders,
+  listPassengerProfiles, loadOrder, markConfirmationSent, recordBooking, recordPayment,
+  transition,
 } from '../orders/service.js';
+import { buildConfirmationMessage } from '../messaging/confirmation.js';
+import { buildWhatsAppLink } from '../messaging/whatsapp.js';
 import { listChannels } from '../booking/channels.js';
 import { verifyOrderAgainstAirline } from '../booking/verify.js';
 
@@ -115,6 +118,56 @@ orders.post('/:id/booking', guard((req, res) => {
     ticketNumbers: field(body, 'ticket_numbers', { type: 'string', required: false, fallback: '', max: 200 }),
     actorName: field(body, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 }),
   }));
+}));
+
+/** Where the customer can view their own booking. */
+const publicUrl = (req, token) =>
+  token
+    ? `${process.env.PUBLIC_BASE_URL ?? `${req.protocol}://${req.get('host')}`}/q/${token}`
+    : '';
+
+/** The confirmation text and link, without sending or marking it sent. */
+orders.get('/:id/confirmation', (req, res) => {
+  const order = loadOrder(intParam(req.params.id, 'order'));
+  if (!order) throw notFound('Order');
+  const url = publicUrl(req, order.public_token);
+  res.json({
+    message: buildConfirmationMessage(customerOrderView(order), url),
+    public_url: url,
+    sent_at: order.confirmation_sent_at,
+    sent_count: order.confirmation_count,
+  });
+});
+
+/**
+ * Hands the employee the confirmation to send and records that it went out.
+ * As with the quotation, building the message and delivering it are separate:
+ * a WhatsApp provider plugs in without touching this.
+ */
+orders.post('/:id/confirmation', guard((req, res) => {
+  const id = intParam(req.params.id, 'order');
+  const order = loadOrder(id);
+  if (!order) throw notFound('Order');
+
+  const channel = field(req.body ?? {}, 'channel', {
+    type: 'string', required: false, fallback: 'whatsapp', max: 40,
+  });
+  const url = publicUrl(req, order.public_token);
+  const message = buildConfirmationMessage(customerOrderView(order), url);
+
+  const updated = markConfirmationSent(id, {
+    channel,
+    actorName: field(req.body ?? {}, 'actor_name', { type: 'string', required: false, fallback: '', max: 80 }),
+  });
+
+  res.json({
+    message,
+    link: buildWhatsAppLink(order.client_phone, message),
+    public_url: url,
+    delivered: false,
+    note: 'Message generated for manual sending. A WhatsApp provider can be connected later.',
+    order: updated,
+  });
 }));
 
 orders.get('/clients/:id/passengers', (req, res) => {

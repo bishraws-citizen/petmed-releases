@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { api, useResource } from '../lib/api';
@@ -31,6 +31,10 @@ export function CustomerQuotePage() {
   const { token } = useParams();
   const quote = useResource<CustomerQuote>(`/public/quotes/${token}`);
   const saved = useResource<SavedPassenger[]>(`/public/quotes/${token}/passengers`);
+  // A customer who comes back to their link later should land on whatever their
+  // booking has become, not be asked to choose a flight again. This comes back
+  // null until they confirm.
+  const existing = useResource<CustomerOrder | null>(`/public/quotes/${token}/order`);
 
   const [step, setStep] = useState<Step>('choose');
   const [chosenId, setChosenId] = useState<number | null>(null);
@@ -41,6 +45,13 @@ export function CustomerQuotePage() {
 
   const data = quote.data;
   const chosen = data?.options.find((option) => option.id === chosenId) ?? null;
+
+  useEffect(() => {
+    if (existing.data && step === 'choose' && !order) {
+      setOrder(existing.data);
+      setStep('done');
+    }
+  }, [existing.data, step, order]);
 
   const counts = useMemo(
     () => rows.reduce(
@@ -148,7 +159,13 @@ export function CustomerQuotePage() {
         <header className="cq-head">
           <div>
             <div className="cq-agency">{data.agency.name}</div>
-            <h1 className="cq-title">{step === 'done' ? 'Booking Request Received' : 'Flight Quotation'}</h1>
+            <h1 className="cq-title">
+              {step !== 'done'
+                ? 'Flight Quotation'
+                : order?.status === 'booked'
+                  ? 'Booking Confirmed'
+                  : 'Booking Request Received'}
+            </h1>
           </div>
           <div className="cq-ref">
             <span className="cq-label">{step === 'done' ? 'Order' : 'Quotation'}</span>
@@ -369,6 +386,9 @@ export function CustomerQuotePage() {
         ) : null}
 
         {step === 'done' && order ? (
+          order.status === 'booked' ? (
+            <TicketConfirmation order={order} agencyName={data.agency.name} />
+          ) : (
           <section>
             <div className="cq-banner cq-banner-ok">
               <strong>Thank you — your booking request is confirmed.</strong>
@@ -413,6 +433,7 @@ export function CustomerQuotePage() {
 
             {order.payment ? <PaymentInstructions payment={order.payment} /> : null}
           </section>
+          )
         ) : null}
 
         {data.terms && step !== 'done' ? (
@@ -512,6 +533,94 @@ function PaymentInstructions({ payment }: { payment: CustomerPayment }) {
           Please pay by {formatExpiry(payment.expires_at)} so we can hold this fare for you.
         </p>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * The ticket. Once a booking is issued the customer's link becomes their
+ * confirmation — the same URL they were quoted on, so nothing new to keep.
+ */
+function TicketConfirmation({ order, agencyName }: { order: CustomerOrder; agencyName: string }) {
+  const flight = order.flight;
+
+  return (
+    <section>
+      <div className="cq-banner cq-banner-ok">
+        <strong>Your booking is confirmed and ticketed.</strong>
+        <span>Please check the passenger names below match your passports exactly.</span>
+      </div>
+
+      <div className="cq-ticket">
+        <div className="cq-ticket-head">
+          <div>
+            <span className="cq-label">Airline booking reference</span>
+            <div className="cq-pnr">{order.booking_reference ?? '—'}</div>
+            <span className="sub">Quote this to the airline for any change</span>
+          </div>
+        </div>
+
+        <div className="cq-ticket-flight">
+          <div className="cq-airline">
+            {flight.airline}
+            {flight.flight_number ? <span className="cq-flightno">{flight.flight_number}</span> : null}
+          </div>
+          <div className="cq-times">
+            <div className="cq-time">
+              <strong>{flight.depart_time || '—'}</strong>
+              <span>{flight.origin}</span>
+            </div>
+            <div className="cq-arrow">
+              <span>{formatDuration(flight.duration_minutes)}</span>
+              <div className="cq-line" />
+              <span>{formatStops(flight.stops)}</span>
+            </div>
+            <div className="cq-time">
+              <strong>{flight.arrive_time || '—'}</strong>
+              <span>{flight.destination}</span>
+            </div>
+          </div>
+          <div className="cq-baggage">{formatDate(flight.depart_date)}</div>
+          {flight.baggage ? <div className="cq-baggage">Baggage: {flight.baggage}</div> : null}
+        </div>
+
+        <dl className="cq-summary" style={{ marginBottom: 0 }}>
+          <div>
+            <dt>Passengers</dt>
+            <dd>
+              {order.passengers.map((passenger) => (
+                <div key={passenger.full_name}>
+                  {passenger.full_name}{' '}
+                  <span className="sub">({passenger.passenger_type})</span>
+                </div>
+              ))}
+            </dd>
+          </div>
+          {order.ticket_numbers ? (
+            <div>
+              <dt>Ticket{order.ticket_numbers.includes(',') ? 's' : ''}</dt>
+              <dd>{order.ticket_numbers}</dd>
+            </div>
+          ) : null}
+          <div className="cq-summary-total">
+            <dt>Paid</dt>
+            <dd>
+              <span className="cq-iqd">{formatIqd(order.price_iqd_cents)}</span>
+              <span className="cq-usd">{formatUsdApprox(order.price_usd_cents)}</span>
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="cq-actions">
+        <button type="button" className="btn" onClick={() => window.print()}>
+          Print this confirmation
+        </button>
+      </div>
+
+      <p className="field-hint" style={{ marginTop: 10 }}>
+        Keep your booking reference. Contact {agencyName} for any change to names, dates or baggage.
+      </p>
     </section>
   );
 }

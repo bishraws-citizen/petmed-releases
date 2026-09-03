@@ -372,6 +372,36 @@ export function recordBooking(orderId, { channel, bookingReference, ticketNumber
 }
 
 /**
+ * Records that the booking confirmation went out. Kept as a count and a
+ * timestamp so a re-send is visibly a re-send rather than looking like the
+ * first one.
+ */
+export function markConfirmationSent(orderId, { channel = 'whatsapp', actorName = '' } = {}) {
+  const order = one('SELECT * FROM orders WHERE id = :id', { id: orderId });
+  if (!order) throw new OrderError('NOT_FOUND', 'Order not found');
+  if (order.status !== 'booked') {
+    throw new OrderError(
+      'NOT_BOOKED',
+      `A confirmation can only be sent once the ticket is issued; this order is ${order.status.replace(/_/g, ' ')}.`,
+    );
+  }
+
+  const resend = order.confirmation_count > 0;
+  run(
+    `UPDATE orders SET confirmation_sent_at = datetime('now'), confirmation_channel = :channel,
+            confirmation_count = confirmation_count + 1, updated_at = datetime('now')
+     WHERE id = :id`,
+    { id: orderId, channel },
+  );
+  recordEvent(orderId, {
+    actor: 'employee',
+    actorName,
+    note: `${resend ? 'Re-sent' : 'Sent'} the booking confirmation via ${channel}.`,
+  });
+  return loadOrder(orderId);
+}
+
+/**
  * What a customer may see about their own order after confirming: enough to know
  * it worked, and nothing about what it cost the agency.
  */
@@ -400,4 +430,10 @@ export const customerOrderView = (order) => ({
     passenger_type: passenger.passenger_type,
   })),
   booking_reference: order.booking_reference || null,
+  // Ticket details, once a channel has issued. Passport numbers are
+  // deliberately not echoed back — the customer supplied them and does not
+  // need them read out on a shareable link.
+  ticket_numbers: order.ticket_numbers || null,
+  booked_at: order.booked_at ?? null,
+  confirmation_sent_at: order.confirmation_sent_at ?? null,
 });

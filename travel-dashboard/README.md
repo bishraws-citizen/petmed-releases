@@ -19,6 +19,7 @@ into bookings, and track the money against each booking until it is settled.
 | **Orders** | A customer confirms a quotation and it becomes a booking request with its price locked. Employees see passengers, payment state, ticketing status and the full history. |
 | **Settings** | Exchange rates, IQD rounding, default markup and quote validity — all administrator-editable. |
 | **Payments** | Payment requests with instructions and a reference, signed provider webhooks, reconciliation against the locked price, and an automatic fare re-check once money lands. |
+| **Confirmation** | Once a ticket is issued the customer's link becomes their confirmation: PNR, ticket numbers, passengers and what they paid, printable. |
 
 ## Running it
 
@@ -165,7 +166,7 @@ question for you and your legal advisers, not something the code can settle.
 
 ### Tests
 
-`npm test` runs 56 checks and is self-contained — it starts its own mock
+`npm test` runs 63 checks and is self-contained — it starts its own mock
 airline on an ephemeral port and creates its own fixtures, so it passes on a
 fresh checkout with nothing else running and no seeding. The flight-search suite drives a real browser against
 the mock airline (parser edge cases, airport resolution, one-way and return
@@ -177,7 +178,9 @@ order suite covers the price lock surviving a rate change and a reprice, expiry
 blocking confirmation, passenger snapshotting, every guard in the status
 machine, and automated booking channels refusing until connected. The payment
 suite covers forged, tampered, stale, unsigned and unverifiable callbacks,
-replay deduplication, under- and overpayment, and settlement by hand.
+replay deduplication, under- and overpayment, and settlement by hand. The
+confirmation suite covers the ticket projection, the leak check on the message,
+gating on `booked`, and re-send accounting.
 
 ## Pricing and quotations
 
@@ -416,6 +419,26 @@ BANK_NAME= BANK_ACCOUNT= BANK_IBAN= BANK_SWIFT=   # shown in transfer instructio
 POST_PAYMENT_RECHECK=off     # disable the automatic fare check
 ```
 
+## Booking confirmation
+
+When a consultant records the PNR, the order becomes `booked` and the
+confirmation stage opens.
+
+- **The customer's link becomes their ticket.** The same `/q/<token>` URL they
+  were quoted on now shows the airline booking reference, ticket numbers, the
+  flight, the passengers and what they paid — printable, and reachable again
+  later without anything new to keep track of.
+- **The confirmation message** is built from the customer projection, exactly
+  like the quotation, so it cannot carry the airline's fare, the markup or the
+  margin. Passport numbers are not read back either: the customer supplied
+  them, and a shareable link is no place to repeat them.
+- **Sending stays separate from building.** An employee sends the text today;
+  a WhatsApp provider drops in behind the same seam.
+- **Re-sends are visible as re-sends.** The order records when a confirmation
+  last went out and how many times, and the button changes wording accordingly.
+- A confirmation cannot be sent before a ticket is issued — the API refuses with
+  `NOT_BOOKED` rather than sending a customer an empty booking.
+
 ## The wider pipeline
 
 This module is stage four of a longer workflow. Stages already built are marked:
@@ -436,7 +459,7 @@ Customer sends request                      [built]
   -> availability and price re-checked      [built - automatic, advisory]
   -> booking on an authorized channel       (channel abstraction built; GDS/NDC not connected)
   -> PNR / ticket recorded                  [built - recorded by staff]
-  -> confirmation sent to customer          (not built)
+  -> confirmation sent to customer          [built - message + customer ticket page]
 ```
 
 What remains deliberately absent is a connected payment gateway and automatic
@@ -481,6 +504,8 @@ All endpoints live under `/api`. Amounts in and out are in cents.
 | `POST` | `/orders/:id/verify` | re-check fare and availability before ticketing |
 | `POST` | `/orders/:id/booking` | record the PNR and ticket numbers |
 | `GET` | `/orders/channels` | which booking channels exist and which are connected |
+| `GET` `POST` | `/orders/:id/confirmation` | preview, or generate and record, the booking confirmation |
+| `GET` | `/public/quotes/:token/order` | **customer-facing**; their order, payment or ticket |
 
 Filters worth knowing: `/payments?overdue=true` returns everything still pending
 past its due date, and `/bookings?q=` searches reference, supplier, destination,

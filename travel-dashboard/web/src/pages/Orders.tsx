@@ -155,6 +155,7 @@ function OrderDetail({
   const channels = useResource<{ channels: BookingChannel[] }>('/orders/channels');
   const [busy, setBusy] = useState(false);
   const [verification, setVerification] = useState<Record<string, unknown> | null>(null);
+  const [confirmation, setConfirmation] = useState<{ message: string; link: string } | null>(null);
   const [showBooking, setShowBooking] = useState(false);
 
   const data = order.data;
@@ -342,6 +343,22 @@ function OrderDetail({
               >
                 Record PNR
               </button>
+              <button
+                type="button"
+                className={data.status === 'booked' ? 'btn btn-primary' : 'btn'}
+                disabled={busy || data.status !== 'booked'}
+                title={data.status === 'booked'
+                  ? 'Generate the confirmation to send the customer'
+                  : 'Available once the ticket is issued'}
+                onClick={() => act(
+                  data.confirmation_count > 0 ? 'Confirmation re-sent' : 'Confirmation ready to send',
+                  async () => {
+                    setConfirmation(await api.post(`/orders/${data.id}/confirmation`, {}));
+                  },
+                )}
+              >
+                {data.confirmation_count > 0 ? 'Re-send confirmation' : 'Send confirmation'}
+              </button>
               {data.public_token ? (
                 <a className="btn" href={`/q/${data.public_token}`} target="_blank" rel="noreferrer noopener">
                   Customer view ↗
@@ -359,6 +376,38 @@ function OrderDetail({
             </div>
 
             <PaymentPanel order={data} onChanged={() => { order.reload(); onChanged(); }} />
+
+            {data.confirmation_sent_at ? (
+              <p className="field-hint">
+                Confirmation sent {formatTimestamp(data.confirmation_sent_at)} via{' '}
+                {data.confirmation_channel || 'whatsapp'}
+                {data.confirmation_count > 1 ? ` · ${data.confirmation_count} times` : ''}.
+              </p>
+            ) : null}
+
+            {confirmation ? (
+              <section className="whatsapp-panel">
+                <div className="toolbar" style={{ marginBottom: 8 }}>
+                  <strong>Booking confirmation</strong>
+                  <a className="btn btn-sm btn-primary" href={confirmation.link}
+                    target="_blank" rel="noreferrer noopener">
+                    Open in WhatsApp ↗
+                  </a>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(confirmation.message)
+                        .then(() => toast('Confirmation copied'))
+                        .catch(() => toast('Could not copy — select the text instead', 'error'));
+                    }}
+                  >
+                    Copy text
+                  </button>
+                </div>
+                <pre className="whatsapp-preview">{confirmation.message}</pre>
+              </section>
+            ) : null}
 
             {verification ? <VerificationPanel result={verification} /> : null}
 

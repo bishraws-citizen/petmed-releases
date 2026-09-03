@@ -439,6 +439,9 @@ export interface Order {
   recheck_verdict: string;
   recheck_detail: string;
   recheck_at: string | null;
+  confirmation_sent_at: string | null;
+  confirmation_channel: string;
+  confirmation_count: number;
   booked_at: string | null;
   failure_reason: string;
   customer_confirmed_at: string | null;
@@ -473,6 +476,9 @@ export interface CustomerOrder {
   price_usd_cents: number;
   passengers: Array<{ full_name: string; passenger_type: PassengerType }>;
   booking_reference: string | null;
+  ticket_numbers: string | null;
+  booked_at: string | null;
+  confirmation_sent_at: string | null;
   payment?: CustomerPayment | null;
 }
 

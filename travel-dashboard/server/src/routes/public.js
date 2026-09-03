@@ -205,9 +205,17 @@ function withPayment(order) {
   };
 }
 
-/** What the customer sees after confirming. */
+/**
+ * What the customer sees after confirming.
+ *
+ * "No order yet" is a real answer to a real question — the page asks on every
+ * load so a returning customer lands on their booking — so it comes back as an
+ * empty 200 rather than a 404 the browser logs as an error.
+ */
 publicQuotes.get('/quotes/:token/order', (req, res) => {
+  const quote = loadQuoteByToken(String(req.params.token));
+  if (!quote) throw notFound('Quotation');
+
   const order = loadOrderByQuoteToken(String(req.params.token));
-  if (!order) throw notFound('Order');
-  res.json(withPayment(order));
+  res.json(order ? withPayment(order) : null);
 });

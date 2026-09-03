@@ -534,6 +534,11 @@ addMissingColumns('orders', {
   recheck_verdict: "TEXT NOT NULL DEFAULT ''",
   recheck_detail: "TEXT NOT NULL DEFAULT ''",
   recheck_at: 'TEXT',
+  // When the booking confirmation last went out, so a re-send is visible
+  // rather than looking like the first one.
+  confirmation_sent_at: 'TEXT',
+  confirmation_channel: "TEXT NOT NULL DEFAULT ''",
+  confirmation_count: 'INTEGER NOT NULL DEFAULT 0',
 });
 
 /** Next reference in a per-entity series, e.g. REQ-0007. */
