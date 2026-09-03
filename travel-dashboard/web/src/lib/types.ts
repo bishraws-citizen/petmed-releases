@@ -469,6 +469,7 @@ export interface CustomerOrder {
   price_usd_cents: number;
   passengers: Array<{ full_name: string; passenger_type: PassengerType }>;
   booking_reference: string | null;
+  payment?: CustomerPayment | null;
 }
 
 export interface BookingChannel {
@@ -479,4 +480,53 @@ export interface BookingChannel {
   connected: boolean;
   requirements: string[];
   description: string;
+}
+
+export type IntentStatus =
+  | 'pending' | 'processing' | 'succeeded' | 'underpaid'
+  | 'failed' | 'expired' | 'cancelled' | 'refunded';
+
+export interface PaymentProvider {
+  id: string;
+  label: string;
+  kind: 'manual' | 'card' | 'wallet';
+  connected: boolean;
+  webhook_ready: boolean;
+  automatic: boolean;
+  requirements: string[];
+  description: string;
+}
+
+export interface PaymentIntent {
+  id: number;
+  reference: string;
+  order_id: number;
+  provider: string;
+  status: IntentStatus;
+  effective_status: IntentStatus;
+  is_expired: boolean;
+  amount_iqd_cents: number;
+  amount_usd_cents: number;
+  currency: string;
+  instructions: string;
+  checkout_url: string;
+  provider_reference: string;
+  paid_amount_iqd_cents: number | null;
+  paid_at: string | null;
+  settled_by: string;
+  failure_reason: string;
+  expires_at: string | null;
+  created_at: string;
+}
+
+/** The payment block on the customer's own copy of their order. */
+export interface CustomerPayment {
+  reference: string;
+  provider: string;
+  status: IntentStatus;
+  amount_iqd_cents: number;
+  amount_usd_cents: number;
+  instructions: string;
+  checkout_url: string;
+  expires_at: string | null;
 }

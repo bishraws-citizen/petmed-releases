@@ -472,6 +472,70 @@ db.exec(`
   `);
 })();
 
+/**
+ * Payment intents and the raw inbound events that settle them.
+ *
+ * No card data is stored anywhere in this schema, and none is ever collected by
+ * this application: card providers are reached through their own hosted
+ * checkout, so card numbers never touch this server.
+ */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS payment_intents (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference          TEXT NOT NULL UNIQUE,
+    order_id           INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    provider           TEXT NOT NULL,
+    status             TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending','processing','succeeded','underpaid',
+                                         'failed','expired','cancelled','refunded')),
+
+    -- Copied from the order, which locked it at confirmation. The webhook's
+    -- claimed amount is checked against this, never the other way round.
+    amount_iqd_cents   INTEGER NOT NULL,
+    amount_usd_cents   INTEGER NOT NULL,
+    currency           TEXT NOT NULL DEFAULT 'IQD',
+
+    instructions       TEXT NOT NULL DEFAULT '',
+    checkout_url       TEXT NOT NULL DEFAULT '',
+    provider_reference TEXT NOT NULL DEFAULT '',
+
+    paid_amount_iqd_cents INTEGER,
+    paid_at            TEXT,
+    settled_by         TEXT NOT NULL DEFAULT '',
+    failure_reason     TEXT NOT NULL DEFAULT '',
+    expires_at         TEXT,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Every inbound provider callback, verified or not. Kept for audit, and the
+  -- unique provider event id is what makes replays harmless.
+  CREATE TABLE IF NOT EXISTS payment_events (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    intent_id          INTEGER REFERENCES payment_intents(id) ON DELETE SET NULL,
+    provider           TEXT NOT NULL,
+    provider_event_id  TEXT NOT NULL,
+    event_type         TEXT NOT NULL DEFAULT '',
+    signature_verified INTEGER NOT NULL DEFAULT 0,
+    outcome            TEXT NOT NULL DEFAULT '',
+    payload            TEXT NOT NULL DEFAULT '',
+    received_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (provider, provider_event_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_intents_order  ON payment_intents(order_id);
+  CREATE INDEX IF NOT EXISTS idx_intents_status ON payment_intents(status);
+  CREATE INDEX IF NOT EXISTS idx_pay_events_int ON payment_events(intent_id);
+`);
+
+// The fare re-check that runs once money arrives, stored on the order so the
+// booking desk can see what the automation found without re-running it.
+addMissingColumns('orders', {
+  recheck_verdict: "TEXT NOT NULL DEFAULT ''",
+  recheck_detail: "TEXT NOT NULL DEFAULT ''",
+  recheck_at: 'TEXT',
+});
+
 /** Next reference in a per-entity series, e.g. REQ-0007. */
 export function nextReference(prefix, table) {
   const row = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get();

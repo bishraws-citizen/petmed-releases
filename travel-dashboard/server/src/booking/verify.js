@@ -25,6 +25,24 @@ export async function verifyOrderAgainstAirline(order, {
   adapter,
   tolerancePercent = DEFAULT_TOLERANCE,
 } = {}) {
+  // A search missing a route or a date would return whatever the airline shows
+  // for "nothing", which is worse than admitting we cannot check.
+  const missing = [
+    !order.origin && 'origin',
+    !order.destination && 'destination',
+    !order.depart_date && 'departure date',
+    !order.flight_number && 'flight number',
+  ].filter(Boolean);
+
+  if (missing.length) {
+    return {
+      verdict: VERDICT.NEEDS_HUMAN,
+      reason_code: 'INCOMPLETE_ORDER',
+      message: `This order has no ${missing.join(', ')}, so the fare cannot be re-checked automatically.`,
+      guidance: 'Check the fare with the airline by hand before issuing the ticket.',
+    };
+  }
+
   let result;
   try {
     result = await runFlightSearch({

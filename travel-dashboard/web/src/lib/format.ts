@@ -230,3 +230,21 @@ export function summarisePassengers(counts: { adult: number; child: number; infa
     })
     .join(' · ');
 }
+
+export const INTENT_STATUS_LABEL: Record<string, string> = {
+  pending: 'Awaiting payment',
+  processing: 'Processing',
+  succeeded: 'Paid',
+  underpaid: 'Underpaid',
+  failed: 'Failed',
+  expired: 'Expired',
+  cancelled: 'Cancelled',
+  refunded: 'Refunded',
+};
+
+export const RECHECK_LABEL: Record<string, string> = {
+  unchanged: 'Fare unchanged',
+  price_changed: 'Airline price moved',
+  not_found: 'Flight no longer offered',
+  needs_human: 'Needs a human',
+};

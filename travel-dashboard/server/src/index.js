@@ -13,6 +13,7 @@ import { quotes } from './routes/quotes.js';
 import { settings } from './routes/settings.js';
 import { publicQuotes } from './routes/public.js';
 import { orders } from './routes/orders.js';
+import { pay, paymentWebhook } from './routes/pay.js';
 import { ensureBaseline } from './pricing/settings.js';
 import { mockAirline } from './mock-airline/index.js';
 import { HttpError } from './validate.js';
@@ -23,7 +24,12 @@ const PORT = Number(process.env.PORT) || 4000;
 ensureBaseline();
 
 const app = express();
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({
+  limit: '256kb',
+  // Payment webhooks are signed over the raw bytes; re-serialising the parsed
+  // body would change them and every signature would fail.
+  verify: (req, _res, buffer) => { req.rawBody = buffer; },
+}));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/overview', overview);
@@ -35,6 +41,8 @@ app.use('/api/flights', flights);
 app.use('/api/quotes', quotes);
 app.use('/api/settings', settings);
 app.use('/api/orders', orders);
+app.use('/api/pay', pay);
+app.use('/api/webhooks/payments', paymentWebhook);
 // Customer-facing, addressed by token; never exposes internal pricing.
 app.use('/api/public', publicQuotes);
 

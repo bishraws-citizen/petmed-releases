@@ -8,6 +8,7 @@ import {
   OrderError, createOrderFromQuote, customerOrderView, listPassengerProfiles,
   loadOrderByQuoteToken,
 } from '../orders/service.js';
+import { activeIntentForOrder, createIntent, decorate } from '../payments/service.js';
 
 /**
  * Everything a customer can reach, addressed by the quotation's random token.
@@ -157,7 +158,16 @@ publicQuotes.post('/quotes/:token/confirm', (req, res) => {
       actorName: quote.client_name,
       customerNote: field(body, 'note', { type: 'string', required: false, fallback: '', max: 500 }),
     });
-    res.status(201).json(customerOrderView(order));
+    // Confirming should hand the customer payment instructions straight away,
+    // not leave them waiting for someone to raise a request by hand. A provider
+    // that cannot issue instructions is not fatal — the order still stands.
+    try {
+      createIntent(order.id, { actorName: '' });
+    } catch (paymentError) {
+      console.warn('could not raise a payment request on confirmation', paymentError.message);
+    }
+
+    res.status(201).json(withPayment(order));
   } catch (error) {
     if (error instanceof OrderError) {
       res.status(error.code === 'QUOTE_EXPIRED' ? 409 : 400).json({
@@ -171,9 +181,33 @@ publicQuotes.post('/quotes/:token/confirm', (req, res) => {
   }
 });
 
+/**
+ * The customer projection plus how to pay. Only the instructions, reference and
+ * the amount already agreed are exposed — nothing about the agency's costs.
+ */
+function withPayment(order) {
+  const view = customerOrderView(order);
+  const intent = decorate(activeIntentForOrder(order.id));
+  if (!intent) return { ...view, payment: null };
+
+  return {
+    ...view,
+    payment: {
+      reference: intent.reference,
+      provider: intent.provider,
+      status: intent.effective_status,
+      amount_iqd_cents: intent.amount_iqd_cents,
+      amount_usd_cents: intent.amount_usd_cents,
+      instructions: intent.instructions,
+      checkout_url: intent.checkout_url,
+      expires_at: intent.expires_at,
+    },
+  };
+}
+
 /** What the customer sees after confirming. */
 publicQuotes.get('/quotes/:token/order', (req, res) => {
   const order = loadOrderByQuoteToken(String(req.params.token));
   if (!order) throw notFound('Order');
-  res.json(customerOrderView(order));
+  res.json(withPayment(order));
 });
