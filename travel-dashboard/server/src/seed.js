@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url';
+
 import { db, one, run, DB_PATH } from './db.js';
 import { ensureBaseline } from './pricing/settings.js';
 import { generatePassword, hashPassword } from './auth/passwords.js';
@@ -97,7 +99,7 @@ function reset() {
   db.exec('PRAGMA foreign_keys = ON');
 }
 
-async function seed() {
+export async function seed() {
   reset();
 
   const clientIds = CLIENTS.map(([name, email, phone, company], index) => {
@@ -318,4 +320,7 @@ async function seedSignIns() {
   return rows;
 }
 
-await seed();
+/** Only self-executes when run as a script, so it can also be imported. */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await seed();
+}

@@ -16,6 +16,7 @@ import { orders } from './routes/orders.js';
 import { pay, paymentWebhook } from './routes/pay.js';
 import { auth } from './routes/auth.js';
 import { attachUser, requireAuth } from './auth/middleware.js';
+import { one } from './db.js';
 import { ensureBaseline } from './pricing/settings.js';
 import { mockAirline } from './mock-airline/index.js';
 import { HttpError } from './validate.js';
@@ -25,7 +26,37 @@ const PORT = Number(process.env.PORT) || 4000;
 
 ensureBaseline();
 
+/*
+ * A newly deployed container starts with an empty database, so there is no
+ * account to sign in with and nothing to look at. Seeding on boot fixes that,
+ * but only when asked for AND only when the database is genuinely empty — it
+ * must never run over a real agency's data.
+ */
+if (process.env.SEED_ON_BOOT === 'true') {
+  if (one('SELECT 1 AS present FROM clients LIMIT 1')) {
+    console.log('SEED_ON_BOOT is set but the database already has data — leaving it alone.');
+  } else {
+    const { seed } = await import('./seed.js');
+    await seed();
+  }
+}
+
 const app = express();
+
+/*
+ * Hosted behind a load balancer, the TLS terminates there and Express sees a
+ * plain HTTP hop. Without this, req.protocol reports "http", so every customer
+ * quotation link generated for WhatsApp would point at http:// — and the
+ * sign-in rate limiter would key on the proxy's address instead of the
+ * caller's, letting one noisy client exhaust everyone's allowance.
+ *
+ * Left off by default because trusting forwarded headers when nothing is in
+ * front of the app would let a caller spoof their own address.
+ */
+if (process.env.TRUST_PROXY) {
+  const hops = Number(process.env.TRUST_PROXY);
+  app.set('trust proxy', Number.isFinite(hops) ? hops : process.env.TRUST_PROXY);
+}
 app.use(express.json({
   limit: '256kb',
   // Payment webhooks are signed over the raw bytes; re-serialising the parsed

@@ -28,7 +28,15 @@ const SELECTORS = {
   },
 };
 
-const baseUrl = () => process.env.MOCK_AIRLINE_URL ?? 'http://localhost:4000/mock-airline';
+/**
+ * The mock airline is served by this same process, so its address follows
+ * whatever port the app was given. Hard-coding 4000 meant that on a host
+ * assigning any other port the adapter pointed at nothing and every search came
+ * back empty.
+ */
+const baseUrl = () =>
+  process.env.MOCK_AIRLINE_URL
+  ?? `http://127.0.0.1:${process.env.PORT || 4000}/mock-airline`;
 
 export const mockAdapter = {
   id: 'mock',

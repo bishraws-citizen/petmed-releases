@@ -80,7 +80,7 @@ auth.post('/login', async (req, res, next) => {
     const { token } = createSession(employee.id, { userAgent: req.get('user-agent') ?? '' });
     run("UPDATE employees SET last_login_at = datetime('now') WHERE id = :id", { id: employee.id });
 
-    res.setHeader('Set-Cookie', sessionCookie(token));
+    res.setHeader('Set-Cookie', sessionCookie(token, { secure: req.secure }));
     res.json({ user: publicUser(employee) });
   } catch (error) {
     next(error);
@@ -89,7 +89,7 @@ auth.post('/login', async (req, res, next) => {
 
 auth.post('/logout', (req, res) => {
   if (req.sessionToken) destroySession(req.sessionToken);
-  res.setHeader('Set-Cookie', sessionCookie('', { clear: true }));
+  res.setHeader('Set-Cookie', sessionCookie('', { clear: true, secure: req.secure }));
   res.json({ ok: true });
 });
 
@@ -121,7 +121,7 @@ auth.post('/password', requireAuth, async (req, res, next) => {
     destroySessionsFor(req.user.id);
 
     const { token } = createSession(req.user.id, { userAgent: req.get('user-agent') ?? '' });
-    res.setHeader('Set-Cookie', sessionCookie(token));
+    res.setHeader('Set-Cookie', sessionCookie(token, { secure: req.secure }));
     res.json({ ok: true, note: 'Your other sessions have been signed out.' });
   } catch (error) {
     next(error);

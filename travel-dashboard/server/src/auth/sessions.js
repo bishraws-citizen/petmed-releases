@@ -94,7 +94,13 @@ export function readCookie(header, name) {
   return null;
 }
 
-export function sessionCookie(token, { clear = false } = {}) {
+/**
+ * @param {string} token
+ * @param {object} [options]
+ * @param {boolean} [options.clear] expire the cookie instead of setting it
+ * @param {boolean} [options.secure] whether this connection is actually HTTPS
+ */
+export function sessionCookie(token, { clear = false, secure = false } = {}) {
   const attributes = [
     `${COOKIE_NAME}=${clear ? '' : token}`,
     'Path=/',
@@ -103,7 +109,17 @@ export function sessionCookie(token, { clear = false } = {}) {
     // defence for a JSON API like this one.
     'SameSite=Lax',
   ];
-  if (process.env.NODE_ENV === 'production') attributes.push('Secure');
+
+  /*
+   * Marked Secure when the connection genuinely is, rather than whenever
+   * NODE_ENV says "production". A browser silently drops a Secure cookie sent
+   * over plain HTTP, which presents as "sign-in does nothing" with no error —
+   * so this follows the request instead of an unrelated environment flag.
+   * COOKIE_SECURE=true forces it on where TLS terminates somewhere the app
+   * cannot see.
+   */
+  if (secure || process.env.COOKIE_SECURE === 'true') attributes.push('Secure');
+
   attributes.push(clear ? 'Max-Age=0' : `Max-Age=${LIFETIME_HOURS * 3600}`);
   return attributes.join('; ');
 }

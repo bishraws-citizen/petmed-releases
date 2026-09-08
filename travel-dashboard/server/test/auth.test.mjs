@@ -152,6 +152,17 @@ test('the session cookie is httpOnly and same-site', () => {
   assert.match(cleared, /Max-Age=0/);
 });
 
+test('Secure follows the connection, not an environment flag', () => {
+  // A Secure cookie sent over plain HTTP is dropped by the browser with no
+  // error, which looks exactly like "sign-in does nothing".
+  assert.doesNotMatch(sessionCookie('t', { secure: false }), /Secure/);
+  assert.match(sessionCookie('t', { secure: true }), /Secure/);
+
+  process.env.COOKIE_SECURE = 'true';
+  assert.match(sessionCookie('t', { secure: false }), /Secure/, 'the override forces it on');
+  delete process.env.COOKIE_SECURE;
+});
+
 test('cookie parsing picks the right value and ignores the rest', () => {
   assert.equal(readCookie(`other=1; ${COOKIE_NAME}=wanted; another=2`, COOKIE_NAME), 'wanted');
   assert.equal(readCookie('other=1', COOKIE_NAME), null);

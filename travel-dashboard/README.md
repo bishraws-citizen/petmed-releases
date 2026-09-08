@@ -21,6 +21,55 @@ into bookings, and track the money against each booking until it is settled.
 | **Payments** | Payment requests with instructions and a reference, signed provider webhooks, reconciliation against the locked price, and an automatic fare re-check once money lands. |
 | **Confirmation** | Once a ticket is issued the customer's link becomes their confirmation: PNR, ticket numbers, passengers and what they paid, printable. |
 
+## Deploying it
+
+The app is one long-lived Node process serving both the API and the built SPA,
+so it wants a container host rather than a serverless one — it keeps a SQLite
+file on disk and drives a browser for flight search.
+
+A `Dockerfile` and a `render.yaml` blueprint are included. On Render: **New →
+Blueprint**, point it at this repository, set `ADMIN_PASSWORD`, deploy, then set
+`PUBLIC_BASE_URL` to the URL it hands you and redeploy. Any host that runs a
+Dockerfile works the same way.
+
+```bash
+# Or run the same image locally
+docker build -t voyager travel-dashboard
+docker run -p 4000:4000 -e SEED_ON_BOOT=true -e ADMIN_PASSWORD=your-password voyager
+```
+
+### Read this before deploying
+
+- **A free tier's filesystem is ephemeral.** The SQLite database lives in the
+  container, so it is wiped whenever the service restarts, redeploys or wakes
+  from sleep. `SEED_ON_BOOT=true` re-seeds it, which makes for a fine demo and
+  is unusable for real work. Real use needs a persistent disk or a hosted
+  database.
+- **Do not put real customer data on a public demo.** This system stores
+  passport numbers and dates of birth. A free-tier instance with a seeded
+  administrator password is not somewhere that belongs.
+- **Free services sleep.** The first request after idling takes a while, and a
+  flight search launching a browser on a small instance is slow.
+- **Set `TRUST_PROXY=1` behind a load balancer**, or customer quotation links
+  will be generated as `http://` and the sign-in throttle will count everyone
+  as one caller.
+- **Flight search needs Chromium.** The image installs it by default; build with
+  `--build-arg INSTALL_BROWSER=false` to skip it and cut the image size, at the
+  cost of search reporting that a browser is unavailable.
+
+### Environment
+
+| Variable | Purpose |
+| --- | --- |
+| `PORT` | Port to listen on (hosts usually set this) |
+| `TRUST_PROXY` | Number of proxies in front; enables HTTPS detection |
+| `PUBLIC_BASE_URL` | Base for customer links; overrides what the request reports |
+| `COOKIE_SECURE` | Force the Secure cookie flag where TLS ends out of sight |
+| `SEED_ON_BOOT` | Seed sample data, only while the database is empty |
+| `ADMIN_PASSWORD` | Administrator password used when seeding |
+| `SESSION_HOURS` | Session lifetime, default 12 |
+| `DATABASE_PATH` | Where the SQLite file lives |
+
 ## Signing in
 
 The workspace holds customer passport details and the agency's own pricing, so
