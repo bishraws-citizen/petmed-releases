@@ -1,0 +1,27 @@
+{
+  "name": "travel-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Travel agency dashboard for managing requests, bookings and payments",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm --workspace server run dev",
+    "dev:web": "npm --workspace web run dev",
+    "seed": "npm --workspace server run seed",
+    "build": "npm --workspace web run build",
+    "typecheck": "npm --workspace web run typecheck",
+    "start": "npm --workspace server run start",
+    "test": "npm --workspace server run test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

@@ -1,0 +1,81 @@
+# One-click deployment blueprint.
+#
+# Render is used here because its free tier runs a long-lived Node process,
+# which this app needs — it holds a SQLite file and runs a browser for flight
+# search, neither of which suits a serverless host.
+#
+# Read the free-tier caveats in the README before pointing anything real at it:
+# the filesystem is ephemeral, so the database resets whenever the container
+# restarts.
+services:
+  - type: web
+    name: voyager-travel-dashboard
+    runtime: docker
+    dockerfilePath: ./travel-dashboard/Dockerfile
+    dockerContext: ./travel-dashboard
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Render terminates TLS at its proxy, so the app has to read the
+      # forwarded headers to know the request was HTTPS. Without this, customer
+      # quotation links come out as http://.
+      - key: TRUST_PROXY
+        value: "1"
+
+      # Fill this in with the service's own URL once Render assigns it, so
+      # links in WhatsApp messages point at the right host.
+      - key: PUBLIC_BASE_URL
+        sync: false
+
+      # Seeds sample data and staff accounts on first boot, and only while the
+      # database is empty.
+      - key: SEED_ON_BOOT
+        value: "true"
+
+      # Set your own administrator password here before the first deploy.
+      # Leave it unset and one is generated and printed to the logs instead.
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      # The bundled fake airline, so flight search has something to search.
+      # A real deployment would drop this and use a verified airline adapter.
+      - key: ENABLE_MOCK_AIRLINE
+        value: "true"
+      - key: FLIGHT_SEARCH_ADAPTER
+        value: mock
+
+      # ── Travelport (GDS ticketing) ────────────────────────────────────────
+      #
+      # Leave TRAVELPORT_MODE unset and the channel reports itself as not
+      # connected, which is the safe default. Set it to "test" to work against
+      # Travelport's pre-production system, "live" for the real one.
+      #
+      # Ticketing is a SEPARATE switch on purpose. With the credentials set but
+      # TRAVELPORT_ALLOW_TICKETING unset, the channel builds real PNRs and stops
+      # before issuing — which is how you want to run it until you have watched
+      # a few bookings come out right.
+      - key: TRAVELPORT_MODE
+        sync: false
+      - key: TRAVELPORT_CLIENT_ID
+        sync: false
+      - key: TRAVELPORT_CLIENT_SECRET
+        sync: false
+      - key: TRAVELPORT_USERNAME
+        sync: false
+      - key: TRAVELPORT_PASSWORD
+        sync: false
+      - key: TRAVELPORT_ACCESS_GROUP
+        sync: false
+
+      # Must be the exact string "true" before any ticket is issued.
+      - key: TRAVELPORT_ALLOW_TICKETING
+        sync: false
+
+      # How far the GDS fare may differ from the price the order locked before
+      # the channel stops rather than ticketing. Zero means any difference stops
+      # it, which is the right place to start.
+      - key: TRAVELPORT_FARE_TOLERANCE_PERCENT
+        value: "0"
