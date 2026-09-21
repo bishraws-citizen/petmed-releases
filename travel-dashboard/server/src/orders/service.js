@@ -437,3 +437,40 @@ export const customerOrderView = (order) => ({
   booked_at: order.booked_at ?? null,
   confirmation_sent_at: order.confirmation_sent_at ?? null,
 });
+
+/**
+ * Writes down a booking reference the moment a channel produces one, without
+ * claiming the order is ticketed.
+ *
+ * An automated channel can create a real PNR and then fail on the ticketing
+ * step. That booking exists and costs the agency a held seat, so losing the
+ * locator is worse than almost any other failure here. This records it, moves
+ * the order into booking_in_progress if it was merely paid, and leaves the
+ * final `booked` transition to whoever confirms a ticket was actually issued.
+ */
+export function recordLocator(orderId, { channel, bookingReference, note = '', actorName = '' }) {
+  const order = one('SELECT * FROM orders WHERE id = :id', { id: orderId });
+  if (!order) throw new OrderError('NOT_FOUND', 'Order not found');
+  if (!bookingReference) throw new OrderError('NO_PNR', 'A booking reference is required.');
+
+  run(
+    `UPDATE orders SET booking_channel = :channel, booking_reference = :ref,
+            updated_at = datetime('now')
+     WHERE id = :id`,
+    { id: orderId, channel: channel || defaultChannelId(), ref: bookingReference },
+  );
+
+  if (order.status === 'paid') {
+    transition(orderId, 'booking_in_progress', {
+      actor: 'system',
+      actorName,
+      note: `Booking ${bookingReference} held on ${channel}.`,
+    });
+  }
+  recordEvent(orderId, {
+    actor: 'system',
+    actorName,
+    note: note || `Booking ${bookingReference} held on ${channel}, not yet ticketed.`,
+  });
+  return loadOrder(orderId);
+}

@@ -7,7 +7,7 @@ import {
   formatDate, formatDuration, formatExpiry, formatIqd, formatStops, formatTimestamp,
   formatUsdApprox, formatUsdExact,
 } from '../lib/format';
-import type { BookingChannel, Order, OrderStatus } from '../lib/types';
+import type { BookingChannel, IssueResult, Order, OrderStatus } from '../lib/types';
 import { PaymentPanel } from '../components/PaymentPanel';
 import {
   Badge, Card, EmptyState, Field, Modal, Segmented, TableSkeleton,
@@ -155,6 +155,7 @@ function OrderDetail({
   const channels = useResource<{ channels: BookingChannel[] }>('/orders/channels');
   const [busy, setBusy] = useState(false);
   const [verification, setVerification] = useState<Record<string, unknown> | null>(null);
+  const [issued, setIssued] = useState<IssueResult | null>(null);
   const [confirmation, setConfirmation] = useState<{ message: string; link: string } | null>(null);
   const [showBooking, setShowBooking] = useState(false);
 
@@ -343,6 +344,14 @@ function OrderDetail({
               >
                 Record PNR
               </button>
+              <IssueButton
+                order={data}
+                channels={channels.data?.channels ?? []}
+                busy={busy}
+                onIssue={(channel) => act('Sent to the booking channel', async () => {
+                  setIssued(await api.post<IssueResult>(`/orders/${data.id}/issue`, { channel }));
+                })}
+              />
               <button
                 type="button"
                 className={data.status === 'booked' ? 'btn btn-primary' : 'btn'}
@@ -409,6 +418,8 @@ function OrderDetail({
               </section>
             ) : null}
 
+            {issued && !issued.ticketed ? <HeldBookingPanel result={issued} /> : null}
+
             {verification ? <VerificationPanel result={verification} /> : null}
 
             <ChannelNotice channels={channels.data?.channels ?? []} />
@@ -449,6 +460,69 @@ function OrderDetail({
         )}
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Hands the order to an automated channel.
+ *
+ * Only offered when a channel that can actually issue is connected, and only
+ * while the order is paid and unbooked — the server refuses the rest, but an
+ * enabled button that always fails is its own kind of bug.
+ */
+function IssueButton({
+  order, channels, busy, onIssue,
+}: {
+  order: Order;
+  channels: BookingChannel[];
+  busy: boolean;
+  onIssue: (channel: string) => void;
+}) {
+  const channel = channels.find((option) => option.automated && option.connected);
+  if (!channel) return null;
+
+  const issuable = ['paid', 'booking_in_progress'].includes(order.status);
+  const alreadyBooked = Boolean(order.booking_reference);
+
+  const why = alreadyBooked
+    ? `This order already holds booking ${order.booking_reference}`
+    : !issuable
+      ? 'Available once the order is paid'
+      : `Build the PNR and issue through ${channel.label}`;
+
+  return (
+    <button
+      type="button"
+      className="btn btn-primary"
+      disabled={busy || !issuable || alreadyBooked}
+      title={why}
+      onClick={() => onIssue(channel.id)}
+    >
+      Issue via {channel.label}
+    </button>
+  );
+}
+
+/**
+ * A booking that exists but was not ticketed.
+ *
+ * Shown loudly, because this is the state that costs money if it is missed:
+ * the agency is holding a seat and the customer has paid, but no ticket has
+ * been issued.
+ */
+function HeldBookingPanel({ result }: { result: IssueResult }) {
+  return (
+    <div className="cq-banner cq-banner-clock" style={{ marginTop: 4 }}>
+      <strong>Booking held, not ticketed</strong>
+      <p>{result.message}</p>
+      {result.booking_reference ? (
+        <p>
+          Booking reference <strong>{result.booking_reference}</strong> exists in the
+          channel. Do not issue again without checking it there first.
+        </p>
+      ) : null}
+      {result.guidance ? <p className="sub">{result.guidance}</p> : null}
+    </div>
   );
 }
 

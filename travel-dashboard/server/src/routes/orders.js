@@ -4,12 +4,12 @@ import { one } from '../db.js';
 import { badRequest, field, intParam, notFound } from '../validate.js';
 import {
   ORDER_STATUSES, OrderError, canTransition, customerOrderView, listOrders,
-  listPassengerProfiles, loadOrder, markConfirmationSent, recordBooking, recordPayment,
-  transition,
+  listPassengerProfiles, loadOrder, markConfirmationSent, recordBooking, recordLocator,
+  recordPayment, transition,
 } from '../orders/service.js';
 import { buildConfirmationMessage } from '../messaging/confirmation.js';
 import { buildWhatsAppLink } from '../messaging/whatsapp.js';
-import { listChannels } from '../booking/channels.js';
+import { BookingChannelError, issueThroughChannel, listChannels } from '../booking/channels.js';
 import { verifyOrderAgainstAirline } from '../booking/verify.js';
 
 export const orders = Router();
@@ -104,6 +104,75 @@ orders.post('/:id/verify', async (req, res, next) => {
     );
     res.json(verification);
   } catch (error) {
+    next(error);
+  }
+});
+
+
+/**
+ * Issues a ticket through an automated booking channel.
+ *
+ * The channel owns the decision about whether anything may be bought; this
+ * route's job is to make sure whatever it produces is written down. A channel
+ * that creates a PNR and then stops reports a held booking, and the order is
+ * left in booking_in_progress with the reason on its trail — never as `booked`,
+ * because nobody has a ticket yet.
+ */
+orders.post('/:id/issue', async (req, res, next) => {
+  try {
+    const id = intParam(req.params.id, 'order');
+    const order = loadOrder(id);
+    if (!order) throw notFound('Order');
+
+    const channel = field(req.body ?? {}, 'channel', {
+      type: 'string', required: false, fallback: 'travelport', max: 40,
+    });
+    const actorName = req.user?.name ?? '';
+
+    // The locator is persisted the instant the channel finds one, so a failure
+    // after the booking exists still leaves a reference someone can act on.
+    let locatorSaved = '';
+    const onLocator = (bookingReference) => {
+      locatorSaved = bookingReference;
+      recordLocator(id, { channel, bookingReference, actorName });
+    };
+
+    const result = await issueThroughChannel(channel, order, { onLocator });
+
+    if (result.requiresHuman && !result.ticketed) {
+      res.status(202).json({
+        ticketed: false,
+        booking_reference: result.bookingReference ?? locatorSaved,
+        reason: result.reason ?? '',
+        message: result.message,
+        guidance: result.guidance ?? '',
+        order: loadOrder(id),
+      });
+      return;
+    }
+
+    const booked = recordBooking(id, {
+      channel,
+      bookingReference: result.bookingReference,
+      ticketNumbers: (result.ticketNumbers ?? []).join(', '),
+      actorName,
+    });
+    res.json({ ticketed: true, message: result.message, order: booked });
+  } catch (error) {
+    if (error instanceof BookingChannelError) {
+      res.status(409).json({
+        error: error.message,
+        code: error.code,
+        channel: error.channel,
+        remediation: error.remediation,
+        detail: error.details?.detail ?? '',
+      });
+      return;
+    }
+    if (error instanceof OrderError) {
+      res.status(error.code === 'NOT_FOUND' ? 404 : 409).json({ error: error.message, code: error.code });
+      return;
+    }
     next(error);
   }
 });

@@ -19,12 +19,20 @@
  */
 
 export class BookingChannelError extends Error {
-  constructor(code, message, { channel = '', remediation = '' } = {}) {
+  /**
+   * `channel` and `remediation` are lifted out because callers and the API
+   * error handler read them directly. Anything else a channel wants to pass —
+   * an HTTP status, a snippet of the provider's own answer — is kept on
+   * `details`, so a failed booking can be diagnosed from the error alone
+   * rather than from a server log nobody has open.
+   */
+  constructor(code, message, details = {}) {
     super(message);
     this.name = 'BookingChannelError';
     this.code = code;
-    this.channel = channel;
-    this.remediation = remediation;
+    this.channel = details.channel ?? '';
+    this.remediation = details.remediation ?? '';
+    this.details = details;
   }
 }
 
@@ -38,6 +46,8 @@ export class BookingChannelError extends Error {
  * @property {string[]} requirements what an operator must have before enabling it
  * @property {(order, context) => Promise<object>} issue
  */
+
+import { travelportChannel } from './travelport/channel.js';
 
 /** The only channel that works today: a person issues the ticket. */
 const manualAgentPortal = {
@@ -104,13 +114,15 @@ ndc.issue = notConnected(ndc);
 
 const CHANNELS = new Map([
   [manualAgentPortal.id, manualAgentPortal],
+  [travelportChannel.id, travelportChannel],
   [gds.id, gds],
   [ndc.id, ndc],
 ]);
 
 export const listChannels = () =>
-  [...CHANNELS.values()].map(({ id, label, kind, automated, connected, requirements, description }) => ({
+  [...CHANNELS.values()].map(({ id, label, kind, automated, connected, requirements, description, readiness }) => ({
     id, label, kind, automated, connected, requirements, description,
+    ...(readiness ? { readiness } : {}),
   }));
 
 export const getChannel = (id) => CHANNELS.get(id) ?? null;

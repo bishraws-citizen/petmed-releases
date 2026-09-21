@@ -46,3 +46,36 @@ services:
         value: "true"
       - key: FLIGHT_SEARCH_ADAPTER
         value: mock
+
+      # ── Travelport (GDS ticketing) ────────────────────────────────────────
+      #
+      # Leave TRAVELPORT_MODE unset and the channel reports itself as not
+      # connected, which is the safe default. Set it to "test" to work against
+      # Travelport's pre-production system, "live" for the real one.
+      #
+      # Ticketing is a SEPARATE switch on purpose. With the credentials set but
+      # TRAVELPORT_ALLOW_TICKETING unset, the channel builds real PNRs and stops
+      # before issuing — which is how you want to run it until you have watched
+      # a few bookings come out right.
+      - key: TRAVELPORT_MODE
+        sync: false
+      - key: TRAVELPORT_CLIENT_ID
+        sync: false
+      - key: TRAVELPORT_CLIENT_SECRET
+        sync: false
+      - key: TRAVELPORT_USERNAME
+        sync: false
+      - key: TRAVELPORT_PASSWORD
+        sync: false
+      - key: TRAVELPORT_ACCESS_GROUP
+        sync: false
+
+      # Must be the exact string "true" before any ticket is issued.
+      - key: TRAVELPORT_ALLOW_TICKETING
+        sync: false
+
+      # How far the GDS fare may differ from the price the order locked before
+      # the channel stops rather than ticketing. Zero means any difference stops
+      # it, which is the right place to start.
+      - key: TRAVELPORT_FARE_TOLERANCE_PERCENT
+        value: "0"

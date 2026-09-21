@@ -416,13 +416,92 @@ ticketing authority and a channel the airline recognises.
 | Channel | Automated | Status |
 | --- | --- | --- |
 | Agent portal (issued by staff) | no | available |
-| GDS (Amadeus / Sabre / Travelport) | yes | not connected |
+| Travelport (GDS) | yes | implemented — see below |
+| GDS (Amadeus / Sabre) | yes | not connected |
 | NDC (direct, aggregator, or via GDS) | yes | not connected |
 
 The automated channels are declared with their prerequisites and **refuse to
 issue** until actually connected, so a deployment can never quietly believe it
 booked something it did not. Today a consultant issues the ticket and records the
 PNR; the order already carries everything a PNR build needs.
+
+### Travelport
+
+An implemented GDS channel that builds the PNR and issues the ticket. It needs
+IATA accreditation, a Travelport agreement and ticketing authority for the
+marketing carrier — none of which this code can provide.
+
+#### ⚠️ The request and response shapes are unverified
+
+The rules the channel enforces are tested, thoroughly. The Travelport *wire
+format* is not: the machine this was written on has no route to Travelport's
+hosts, so no call in `src/booking/travelport/mapping.js` has ever been answered
+by a real system. Expect the first sandbox run to fail on a field name.
+
+That file is deliberately the only place those shapes appear. The paths sit in
+one `PATHS` object at the top, and the response readers each try several
+documented shapes and return `null` rather than guessing — a `null` makes the
+channel stop and ask for a person, which is the right outcome when we cannot
+prove what happened.
+
+It assumes the **JSON APIs** (OAuth2 client id and secret, an access group). If
+your credentials are for the older **uAPI** — a username like `uAPI1234567-…`, a
+password and a Target Branch — that is SOAP/XML and needs a different client.
+
+#### Switching it on
+
+Two switches, deliberately separate. Creating a PNR is reversible; issuing a
+ticket spends money.
+
+| Variable | What it does |
+| --- | --- |
+| `TRAVELPORT_MODE` | `off` (default), `test`, or `live`. Chooses the endpoints. |
+| `TRAVELPORT_CLIENT_ID` | OAuth2 client id |
+| `TRAVELPORT_CLIENT_SECRET` | OAuth2 client secret |
+| `TRAVELPORT_USERNAME` | Travelport user |
+| `TRAVELPORT_PASSWORD` | Travelport password |
+| `TRAVELPORT_ACCESS_GROUP` | Sent as `XAUTH_TRAVELPORT_ACCESSGROUP` |
+| `TRAVELPORT_ALLOW_TICKETING` | Must be exactly `true` before any ticket is issued |
+| `TRAVELPORT_FARE_TOLERANCE_PERCENT` | How far the GDS fare may differ from the locked order price. Default `0`. |
+| `TRAVELPORT_CURRENCY` | Point-of-sale currency, if it must be stated |
+| `TRAVELPORT_TIMEOUT_MS` | Per-request timeout. Default `30000`. |
+
+**Run it with credentials but without `TRAVELPORT_ALLOW_TICKETING` first.** The
+channel will build real PNRs in the test system and stop before issuing, so you
+can check what it produces against Travelport's own screens before it is ever
+one typo away from buying something.
+
+#### What it refuses to do
+
+Each of these is a test, not a hope:
+
+- **Book the same order twice.** An order that already carries a booking
+  reference is refused before anything is sent. A retry after a timeout cannot
+  produce a second PNR.
+- **Ticket an order nobody has paid for.** Only `paid` and `booking_in_progress`
+  orders may be issued.
+- **Ticket at a price nobody agreed.** The fare Travelport quotes is compared
+  against the fare the order locked. A difference beyond the tolerance, a
+  different currency, or no quoted fare at all leaves a held booking and stops.
+- **Lose a booking that exists.** The record locator is written to the order the
+  moment it appears, before ticketing is attempted. Ticketing can then fail
+  without the PNR going missing.
+- **Claim a ticket it does not have.** A booking that stops short of issuing
+  leaves the order in `booking_in_progress` with the reason on its trail, never
+  as `booked`.
+- **Leak a credential.** Secrets and tokens are stripped from every error, since
+  a failed booking is exactly when someone pastes the whole error into a chat.
+
+A timeout is reported as its own case, because it is the one failure where the
+booking may well have been created — the message says so rather than inviting a
+blind retry.
+
+#### Issuing from the app
+
+`POST /api/orders/:id/issue` with `{"channel": "travelport"}`. It answers `200`
+with the booked order when a ticket was issued, and `202` with the reason when a
+booking was created but held. Anything refused comes back `409` with a code and
+what to do about it.
 
 Before ticketing, **Re-check price & availability** runs the search module
 against the airline and reports whether the fare moved, disappeared, or hit

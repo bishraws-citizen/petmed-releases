@@ -490,6 +490,21 @@ export interface BookingChannel {
   connected: boolean;
   requirements: string[];
   description: string;
+  /** Present on channels that can explain what is still missing. */
+  readiness?: string;
+}
+
+/**
+ * The outcome of asking a channel to issue a ticket. `ticketed: false` means a
+ * booking may well exist — read `booking_reference` — but nobody has a ticket.
+ */
+export interface IssueResult {
+  ticketed: boolean;
+  booking_reference?: string;
+  reason?: string;
+  message: string;
+  guidance?: string;
+  order?: Order;
 }
 
 export type IntentStatus =
